@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Headway – Englisch lernen</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- Firebase -->
+<!-- TODO: Ersetze die firebaseConfig-Werte nach dem Anlegen des neuen Firebase-Projekts -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ⚠️ PLATZHALTER – nach Anlegen des Firebase-Projekts ersetzen!
+  const firebaseConfig = {
+    apiKey: "DEIN_API_KEY",
+    authDomain: "DEIN_PROJEKT.firebaseapp.com",
+    projectId: "DEIN_PROJEKT",
+    storageBucket: "DEIN_PROJEKT.firebasestorage.app",
+    messagingSenderId: "DEINE_SENDER_ID",
+    appId: "DEINE_APP_ID"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+  let syncUnsubscribe = null;
+
+  onAuthStateChanged(auth, async (user) => {
+    window._fbUser = user;
+    if (user) {
+      updateSyncUI(true, user.displayName, user.email);
+      await pullFromFirestore(user.uid);
+      startLiveSync(user.uid);
+    } else {
+      updateSyncUI(false);
+      if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
+    }
+  });
+
+  async function pullFromFirestore(uid) {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (d.errorLog)    { window.errorLog    = d.errorLog;    localStorage.setItem('headway_errorLog',    JSON.stringify(d.errorLog)); }
+      if (d.stats)       { window.stats       = d.stats;       localStorage.setItem('headway_stats',       JSON.stringify(d.stats)); }
+      if (d.notes)       { window.notes       = d.notes;       localStorage.setItem('headway_notes',       JSON.stringify(d.notes)); }
+      if (d.archiveLog)  { window.archiveLog  = d.archiveLog;  localStorage.setItem('headway_archiveLog',  JSON.stringify(d.archiveLog)); }
+      if (d.wortInseln)  { window.wortInseln  = d.wortInseln;  localStorage.setItem('headway_wortInseln',  JSON.stringify(d.wortInseln)); }
+      if (d.readLibrary) { window.readLibrary = d.readLibrary; localStorage.setItem('headway_readLibrary', JSON.stringify(d.readLibrary)); }
+      if (d.savedWords)  { window.savedWords  = d.savedWords;  localStorage.setItem('headway_savedWords',  JSON.stringify(d.savedWords)); }
+      if (typeof window.updateUI === 'function') window.updateUI();
+      if (typeof window.renderNotes === 'function') window.renderNotes();
+      if (typeof window.renderInselList === 'function') window.renderInselList();
+    } catch(e) { console.warn('Firestore pull fehlgeschlagen:', e); }
+  }
+
+  function startLiveSync(uid) {
+    if (syncUnsubscribe) syncUnsubscribe();
+    syncUnsubscribe = onSnapshot(doc(db, 'users', uid), (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (d.errorLog)    { window.errorLog    = d.errorLog;    localStorage.setItem('headway_errorLog',    JSON.stringify(d.errorLog)); }
+      if (d.stats)       { window.stats       = d.stats;       localStorage.setItem('headway_stats',       JSON.stringify(d.stats)); }
+      if (d.notes)       { window.notes       = d.notes;       localStorage.setItem('headway_notes',       JSON.stringify(d.notes)); }
+      if (d.archiveLog)  { window.archiveLog  = d.archiveLog;  localStorage.setItem('headway_archiveLog',  JSON.stringify(d.archiveLog)); }
+      if (d.wortInseln)  { window.wortInseln  = d.wortInseln;  localStorage.setItem('headway_wortInseln',  JSON.stringify(d.wortInseln)); }
+      if (d.readLibrary) { window.readLibrary = d.readLibrary; localStorage.setItem('headway_readLibrary', JSON.stringify(d.readLibrary)); }
+      if (d.savedWords)  { window.savedWords  = d.savedWords;  localStorage.setItem('headway_savedWords',  JSON.stringify(d.savedWords)); if (typeof window.renderWordsList === 'function') window.renderWordsList(); }
+      if (typeof window.updateUI === 'function')      window.updateUI();
+      if (typeof window.renderErrors === 'function')  window.renderErrors();
+      if (typeof window.renderNotes === 'function')   window.renderNotes();
+      if (typeof window.renderInselList === 'function') window.renderInselList();
+    });
+  }
+
+  window._fbSave = async function(payload) {
+    if (!window._fbUser) return;
+    try { await setDoc(doc(db, 'users', window._fbUser.uid), payload, { merge: true }); }
+    catch(e) { console.warn('Firestore save fehlgeschlagen:', e); }
+  };
+
+  window.firebaseLogin = async function() {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch(e) { alert('Anmeldung fehlgeschlagen: ' + e.message); }
+  };
+  window.firebaseLogout = async function() { await signOut(auth); };
+
+  function updateSyncUI(loggedIn, name, email) {
+    const statusEl  = document.getElementById('syncStatus');
+    const loginBtn  = document.getElementById('syncLoginBtn');
+    const logoutBtn = document.getElementById('syncLogoutBtn');
+    if (!statusEl) return;
+    if (loggedIn) {
+      statusEl.innerHTML = `✓ Synchronisiert als <strong>${name}</strong><br><span style="font-size:0.78rem;opacity:0.7;">${email}</span>`;
+      statusEl.style.color = '#4caf7d';
+      if (loginBtn)  loginBtn.style.display  = 'none';
+      if (logoutBtn) logoutBtn.style.display = 'block';
+    } else {
+      statusEl.textContent = 'Nicht angemeldet – Daten werden nur lokal gespeichert';
+      statusEl.style.color = '';
+      if (loginBtn)  loginBtn.style.display  = 'block';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    }
+  }
+</script>
+
+<style>
+:root {
+  --blue: #1B5EA6; --blue-dark: #0D47A1; --blue-light: #E8F0FB;
+  --white: #1A1612; --cream: #EDE8DC;
+  --dark: #FFFFFF; --mid: #F0EBE3; --muted: #6B5F54;
+  --accent: #E8B84B; --green: #2D7A4F;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'DM Sans',sans-serif; font-size:16px; background:#F2EDE5; color:#1A1612; min-height:100vh; overflow-x:hidden; line-height:1.6; }
+body.font-small { font-size:14px; }
+body.font-large { font-size:18px; }
+
+body.theme-dark {
+  --dark: #1A1A2A; --mid: #252535; --muted: #8A8090;
+  --white: #F0EEF8; --blue-light: #1A2540;
+  background:#1A1A2A; color:#F0EEF8;
+}
+
+/* ── HEADER ── */
+header { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid rgba(0,0,0,0.1); background:rgba(255,255,255,0.97); backdrop-filter:blur(10px); position:sticky; top:0; z-index:100; }
+body.theme-dark header { border-bottom-color:rgba(255,255,255,0.08); background:rgba(26,26,42,0.95); }
+.logo { font-family:'Fraunces',serif; font-size:1.5rem; color:var(--white); display:flex; align-items:center; gap:10px; }
+.logo-flag { width:28px; height:20px; border-radius:3px; overflow:hidden; position:relative; background:#012169; flex-shrink:0; }
+.logo-flag::before { content:''; position:absolute; inset:0; background:
+  linear-gradient(to bottom right, transparent 40%, white 40%, white 60%, transparent 60%),
+  linear-gradient(to bottom left, transparent 40%, white 40%, white 60%, transparent 60%); opacity:0.7; }
+.logo-flag::after { content:''; position:absolute; left:50%; top:0; transform:translateX(-50%); width:35%; height:100%; background:#C8102E; box-shadow:0 0 0 3px white; }
+.header-right { display:flex; align-items:center; gap:10px; }
+.streak-badge { background:var(--accent); color:#1A1612; font-weight:600; font-size:0.85rem; padding:6px 14px; border-radius:20px; display:flex; align-items:center; gap:5px; cursor:default; white-space:nowrap; }
+.rate-limit-badge { font-size:0.75rem; color:var(--muted); padding:4px 10px; border:1px solid rgba(0,0,0,0.12); border-radius:12px; display:none; }
+body.theme-dark .rate-limit-badge { border-color:rgba(255,255,255,0.1); }
+
+/* ── NAV ── */
+nav { display:flex; gap:4px; padding:14px 28px 0; border-bottom:1px solid rgba(0,0,0,0.1); overflow:visible; background:rgba(255,255,255,0.6); backdrop-filter:blur(8px); }
+body.theme-dark nav { border-bottom-color:rgba(255,255,255,0.08); background:rgba(26,26,42,0.6); }
+.tab { padding:10px 16px; border-radius:8px 8px 0 0; border:none; background:transparent; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:0.88rem; font-weight:500; cursor:pointer; transition:all 0.2s; white-space:nowrap; border-bottom:3px solid transparent; position:relative; min-height:44px; }
+.tab:hover { color:var(--white); background:rgba(27,94,166,0.06); }
+.tab.active { color:var(--blue); border-bottom-color:var(--blue); font-weight:600; }
+.err-badge { position:absolute; top:5px; right:4px; background:#C8102E; color:white; font-size:0.58rem; font-weight:700; min-width:15px; height:15px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0 3px; }
+
+/* ── MAIN ── */
+main { max-width:860px; margin:0 auto; padding:28px 20px 100px; }
+body.read-active main { max-width:1100px; }
+.section { display:none; }
+.section.active { display:block; }
+.section-title { font-family:'Fraunces',serif; font-size:1.5rem; font-weight:700; margin-bottom:6px; }
+.section-sub { color:var(--muted); font-size:0.9rem; margin-bottom:24px; }
+
+/* ── CARDS & BUTTONS ── */
+.btn { padding:12px 22px; border-radius:10px; border:none; font-family:'DM Sans',sans-serif; font-weight:600; font-size:0.95rem; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:6px; min-height:48px; }
+.btn-primary { background:var(--blue); color:white; }
+.btn-primary:hover { background:var(--blue-dark); transform:translateY(-1px); }
+.btn-primary:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+.btn-secondary { background:var(--blue); color:white; border:none; }
+.btn-secondary:hover { background:var(--blue-dark); }
+.btn-ghost { background:rgba(255,255,255,0.07); color:var(--white); border:1px solid rgba(255,255,255,0.15); }
+body:not(.theme-dark) .btn-ghost { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.12); color:var(--white); }
+.btn-ghost:hover { background:rgba(27,94,166,0.1); border-color:var(--blue); color:var(--blue); }
+.btn-sm { padding:8px 16px; font-size:0.85rem; min-height:38px; }
+.btn-export { padding:9px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05); color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.85rem; font-weight:600; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:5px; }
+body:not(.theme-dark) .btn-export { border-color:rgba(0,0,0,0.12); background:rgba(0,0,0,0.03); }
+.btn-export:hover { background:rgba(27,94,166,0.1); border-color:var(--blue); }
+
+.card { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:14px; padding:22px; }
+body.theme-dark .card { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+
+textarea, input[type=text], input[type=number], input[type=password], select.form-select {
+  font-family:'DM Sans',sans-serif; font-size:0.95rem; border-radius:10px;
+  padding:12px 14px; outline:none; transition:border-color 0.2s; width:100%;
+}
+textarea { flex:1; background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.15); color:var(--white); resize:none; min-height:46px; max-height:140px; line-height:1.5; }
+textarea:focus { border-color:var(--blue); }
+textarea::placeholder { color:var(--muted); }
+body.theme-dark textarea { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:var(--white); }
+body.theme-dark textarea:focus { border-color:var(--blue); }
+input[type=text], input[type=number], input[type=password] { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.15); color:var(--white); }
+input[type=text]:focus, input[type=number]:focus, input[type=password]:focus { border-color:var(--blue); }
+body.theme-dark input[type=text], body.theme-dark input[type=number], body.theme-dark input[type=password] { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:var(--white); }
+select.form-select { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.15); color:var(--white); cursor:pointer; }
+body.theme-dark select.form-select { background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.12); color:var(--white); }
+select.form-select option { background:#fff; color:#1A1612; }
+body.theme-dark select.form-select option { background:#252535; color:#F0EEF8; }
+
+/* TTS button */
+.tts-btn { background:none; border:none; cursor:pointer; font-size:0.9rem; opacity:0.7; padding:2px 4px; border-radius:4px; transition:opacity 0.15s; vertical-align:middle; }
+.tts-btn:hover { opacity:1; }
+
+/* ── HOME ── */
+.challenge-card { background:linear-gradient(135deg,#1B5EA6 0%,#0D3A6E 100%); border-radius:16px; padding:28px; margin-bottom:24px; position:relative; overflow:hidden; color:white; }
+.challenge-card::before { content:'DAY'; position:absolute; right:-10px; top:-20px; font-family:'Fraunces',serif; font-size:7rem; color:rgba(255,255,255,0.05); font-weight:700; line-height:1; }
+.challenge-label { font-size:0.72rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:rgba(255,255,255,0.7); margin-bottom:8px; }
+.challenge-icon { font-size:2rem; margin-bottom:8px; }
+.challenge-title { font-family:'Fraunces',serif; font-size:1.5rem; margin-bottom:8px; line-height:1.3; }
+.challenge-desc { color:rgba(255,255,255,0.85); font-size:0.95rem; margin-bottom:20px; line-height:1.6; }
+
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-bottom:24px; }
+.stat-card { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:16px; text-align:center; }
+body.theme-dark .stat-card { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+.stat-number { font-family:'Fraunces',serif; font-size:2rem; font-weight:700; color:var(--blue); line-height:1.1; }
+.stat-label { font-size:0.78rem; color:var(--muted); margin-top:4px; }
+.tip-card { background:rgba(27,94,166,0.08); border:1px solid rgba(27,94,166,0.2); border-radius:12px; padding:16px 20px; margin-bottom:20px; }
+body.theme-dark .tip-card { background:rgba(27,94,166,0.15); border-color:rgba(27,94,166,0.3); }
+.tip-cat { font-size:0.72rem; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--blue); margin-bottom:6px; }
+.tip-text { font-size:0.92rem; line-height:1.6; color:var(--white); }
+
+/* Chart */
+.activity-chart { display:flex; align-items:flex-end; gap:8px; height:80px; margin-bottom:24px; }
+.chart-col { display:flex; flex-direction:column; align-items:center; flex:1; height:100%; }
+.chart-bar-wrap { flex:1; display:flex; align-items:flex-end; width:100%; }
+.chart-bar { width:100%; background:rgba(27,94,166,0.2); border-radius:4px 4px 0 0; min-height:2px; transition:height 0.4s; }
+.chart-bar.hit { background:var(--blue); }
+.chart-day { font-size:0.68rem; color:var(--muted); margin-top:4px; }
+
+/* SW Widget */
+.sw-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.sw-label { font-size:0.82rem; min-width:120px; }
+.sw-bar-wrap { flex:1; background:rgba(0,0,0,0.08); border-radius:3px; height:8px; overflow:hidden; }
+body.theme-dark .sw-bar-wrap { background:rgba(255,255,255,0.08); }
+.sw-bar { height:8px; border-radius:3px; transition:width 0.5s; min-width:2px; }
+.sw-count { font-size:0.75rem; min-width:34px; text-align:right; }
+.sw-section-label { font-size:0.7rem; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; margin:10px 0 5px; }
+.sw-empty { text-align:center; padding:20px; color:var(--muted); font-size:0.88rem; }
+
+.level-badge { display:inline-block; background:rgba(27,94,166,0.1); border:1px solid rgba(27,94,166,0.25); color:var(--blue); border-radius:8px; padding:6px 14px; font-size:0.85rem; font-weight:600; margin-bottom:20px; }
+
+/* ── CHAT ── */
+.persona-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+.persona-card { background:rgba(255,255,255,0.04); border:1px solid rgba(0,0,0,0.1); border-radius:12px; padding:16px; cursor:pointer; transition:all 0.2s; text-align:center; }
+body:not(.theme-dark) .persona-card { background:rgba(255,255,255,0.7); }
+.persona-card:hover { border-color:var(--blue); background:rgba(27,94,166,0.06); }
+.persona-icon { font-size:1.6rem; margin-bottom:6px; }
+.persona-name { font-weight:600; font-size:0.9rem; }
+.persona-role { font-size:0.75rem; color:var(--muted); margin-top:3px; }
+.free-persona-box { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:14px; margin-bottom:16px; display:none; }
+body:not(.theme-dark) .free-persona-box { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.1); }
+.chat-container { background:rgba(255,255,255,0.06); border:1px solid rgba(0,0,0,0.1); border-radius:16px; overflow:hidden; }
+body:not(.theme-dark) .chat-container { background:rgba(255,255,255,0.8); }
+.chat-header { padding:14px 18px; border-bottom:1px solid rgba(0,0,0,0.08); display:flex; align-items:center; gap:12px; background:rgba(27,94,166,0.05); }
+.avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--blue),var(--blue-dark)); display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; }
+.chat-persona-name { font-weight:600; font-size:0.95rem; }
+.chat-persona-role { font-size:0.78rem; color:var(--muted); }
+.chat-messages { padding:18px; min-height:280px; max-height:380px; overflow-y:auto; display:flex; flex-direction:column; gap:14px; }
+.message { display:flex; gap:8px; animation:fadeUp 0.3s ease; }
+.message.user { flex-direction:row-reverse; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.message-bubble { max-width:78%; padding:12px 16px; border-radius:16px; font-size:0.93rem; line-height:1.55; }
+.message.ai .message-bubble { background:rgba(27,94,166,0.1); border-radius:4px 16px 16px 16px; }
+body:not(.theme-dark) .message.ai .message-bubble { background:rgba(27,94,166,0.08); }
+.message.user .message-bubble { background:var(--blue); color:white; border-radius:16px 4px 16px 16px; }
+.correction-bubble { background:rgba(232,184,75,0.12); border:1px solid rgba(232,184,75,0.3); border-radius:10px; padding:10px 14px; margin-top:6px; font-size:0.82rem; color:var(--accent); line-height:1.6; max-width:78%; }
+.correction-bubble strong { display:block; margin-bottom:3px; font-size:0.72rem; letter-spacing:0.06em; text-transform:uppercase; }
+.chat-input-area { padding:14px; border-top:1px solid rgba(0,0,0,0.08); display:flex; gap:10px; align-items:flex-end; }
+.chat-input-area textarea { border:1px solid rgba(0,0,0,0.12); }
+body.theme-dark .chat-input-area { border-top-color:rgba(255,255,255,0.08); }
+.chat-attach-wrap { position:relative; }
+.chat-attach-btn { background:rgba(0,0,0,0.05); border:1px solid rgba(0,0,0,0.12); color:var(--muted); border-radius:10px; width:46px; height:46px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1.1rem; transition:all 0.2s; }
+body.theme-dark .chat-attach-btn { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.1); }
+.chat-attach-btn.has-file { border-color:var(--blue); background:rgba(27,94,166,0.1); }
+.file-preview-wrap { display:none; align-items:center; gap:8px; padding:6px 10px; background:rgba(27,94,166,0.08); border-radius:8px; margin-bottom:8px; font-size:0.82rem; }
+.file-preview-thumb { width:28px; height:28px; object-fit:cover; border-radius:4px; }
+.file-icon { font-size:1.2rem; }
+.file-preview-name { color:var(--white); }
+.file-preview-remove { background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; padding:2px 6px; }
+
+/* ── ÜBEN ── */
+.tabs-write { display:flex; gap:8px; margin-bottom:20px; }
+.tab-write { padding:10px 18px; border-radius:8px; border:1px solid rgba(0,0,0,0.12); background:transparent; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:0.9rem; cursor:pointer; transition:all 0.2s; min-height:44px; }
+body.theme-dark .tab-write { border-color:rgba(255,255,255,0.12); }
+.tab-write.active { background:rgba(27,94,166,0.12); border-color:var(--blue); color:var(--blue); font-weight:600; }
+.write-mode { display:none; }
+.write-mode.active { display:block; }
+.writing-prompt-card { background:rgba(27,94,166,0.07); border:1px solid rgba(27,94,166,0.15); border-radius:12px; padding:18px 22px; margin-bottom:18px; }
+.writing-prompt-label { font-size:0.72rem; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:var(--blue); margin-bottom:8px; }
+.writing-prompt-text { font-family:'Fraunces',serif; font-size:1.1rem; line-height:1.5; color:var(--white); }
+.writing-editor { width:100%; background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.12); border-radius:12px; padding:16px 18px; color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.97rem; resize:vertical; min-height:150px; outline:none; transition:border-color 0.2s; line-height:1.65; margin-bottom:12px; }
+body.theme-dark .writing-editor { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.1); color:var(--white); }
+.writing-editor:focus { border-color:var(--blue); }
+.writing-editor::placeholder { color:var(--muted); }
+.writing-actions { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+.feedback-card { background:rgba(45,122,79,0.08); border:1px solid rgba(45,122,79,0.25); border-radius:12px; padding:18px; margin-top:16px; animation:fadeUp 0.4s ease; }
+.feedback-card h4 { color:#2D7A4F; font-size:0.8rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:10px; font-weight:600; }
+.feedback-card p { font-size:0.93rem; line-height:1.65; color:var(--white); }
+body.theme-dark .feedback-card h4 { color:#5CC488; }
+.corrected-card { background:rgba(27,94,166,0.07); border-color:rgba(27,94,166,0.2); }
+.corrected-card h4 { color:var(--blue); }
+
+/* Upload Zone */
+.upload-zone { border:2px dashed rgba(0,0,0,0.15); border-radius:12px; padding:36px 20px; text-align:center; cursor:pointer; transition:all 0.2s; margin-bottom:14px; position:relative; }
+body.theme-dark .upload-zone { border-color:rgba(255,255,255,0.2); }
+.upload-zone:hover, .upload-zone.dragover { border-color:var(--blue); background:rgba(27,94,166,0.04); }
+.upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.upload-zone-icon { font-size:2.5rem; margin-bottom:10px; }
+.upload-zone-text { font-size:0.88rem; color:var(--muted); line-height:1.5; }
+.upload-preview { max-width:100%; max-height:280px; object-fit:contain; border-radius:10px; margin-bottom:14px; display:none; border:1px solid rgba(0,0,0,0.1); }
+.context-input { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.12); border-radius:10px; padding:12px 16px; color:var(--white); font-size:0.93rem; outline:none; transition:border-color 0.2s; margin-bottom:12px; }
+body.theme-dark .context-input { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.1); }
+.context-input:focus { border-color:var(--blue); }
+.context-input::placeholder { color:var(--muted); }
+
+/* ── Grammatik ── */
+.gram-cat-btns { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+.gram-cat-btn { padding:8px 16px; border-radius:8px; border:1px solid rgba(0,0,0,0.12); background:transparent; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:0.85rem; cursor:pointer; transition:all 0.2s; min-height:40px; }
+body.theme-dark .gram-cat-btn { border-color:rgba(255,255,255,0.12); }
+.gram-cat-btn:hover { border-color:var(--blue); color:var(--blue); }
+.gram-cat-btn.active { background:rgba(27,94,166,0.12); border-color:var(--blue); color:var(--blue); font-weight:600; }
+.grammar-rule-card { background:rgba(255,255,255,0.06); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:18px; }
+body:not(.theme-dark) .grammar-rule-card { background:rgba(255,255,255,0.7); }
+.gram-desc { font-size:0.95rem; line-height:1.65; margin-bottom:16px; color:var(--white); }
+.gram-examples { display:flex; flex-direction:column; gap:10px; }
+.gram-ex { background:rgba(0,0,0,0.03); border-radius:8px; padding:12px; }
+body.theme-dark .gram-ex { background:rgba(255,255,255,0.04); }
+.gram-wrong { color:#F07070; font-size:0.9rem; margin-bottom:4px; }
+.gram-right { color:#5CC488; font-size:0.9rem; font-weight:500; margin-bottom:4px; }
+.gram-tip { color:var(--muted); font-size:0.82rem; }
+
+/* Lückenübungen */
+.lucke-card { background:rgba(255,255,255,0.06); border:1px solid rgba(0,0,0,0.08); border-radius:14px; padding:22px; }
+body:not(.theme-dark) .lucke-card { background:rgba(255,255,255,0.8); }
+.lucke-sentence { font-family:'Fraunces',serif; font-size:1.1rem; line-height:1.7; margin-bottom:16px; color:var(--white); }
+.lucke-blank { background:rgba(27,94,166,0.12); border-bottom:2px solid var(--blue); padding:2px 12px; border-radius:4px; color:var(--blue); font-weight:600; }
+.lucke-opts { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+.lucke-opt-btn { padding:10px 20px; border-radius:8px; border:1px solid rgba(0,0,0,0.12); background:rgba(255,255,255,0.7); color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.92rem; cursor:pointer; transition:all 0.2s; min-height:44px; }
+body.theme-dark .lucke-opt-btn { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.12); }
+.lucke-opt-btn:hover:not(:disabled) { border-color:var(--blue); background:rgba(27,94,166,0.1); }
+.lucke-opt-btn.correct { background:rgba(45,122,79,0.15); border-color:#5CC488; color:#5CC488; }
+.lucke-opt-btn.wrong { background:rgba(200,16,46,0.12); border-color:#F07070; color:#F07070; }
+.lucke-right { color:#5CC488; font-size:0.88rem; padding:8px 12px; background:rgba(45,122,79,0.1); border-radius:6px; }
+.lucke-wrong { color:#F07070; font-size:0.88rem; padding:8px 12px; background:rgba(200,16,46,0.08); border-radius:6px; }
+.lucke-nav { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+.lucke-counter { font-size:0.8rem; color:var(--muted); }
+.lucke-feedback { margin-top:8px; min-height:32px; }
+
+/* ── FEHLERLOG ── */
+.error-log-controls { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:12px; }
+.error-count-badge { background:rgba(200,16,46,0.1); border:1px solid rgba(200,16,46,0.25); color:#C8102E; font-size:0.8rem; font-weight:600; padding:5px 12px; border-radius:20px; display:inline-block; }
+body.theme-dark .error-count-badge { color:#F07070; background:rgba(200,16,46,0.15); }
+.filter-btns { display:flex; gap:6px; flex-wrap:wrap; }
+.filter-btn { padding:6px 13px; border-radius:20px; border:1px solid rgba(0,0,0,0.12); background:transparent; color:var(--muted); font-size:0.8rem; cursor:pointer; transition:all 0.2s; font-family:'DM Sans',sans-serif; min-height:36px; }
+body.theme-dark .filter-btn { border-color:rgba(255,255,255,0.12); }
+.filter-btn.active { border-color:var(--blue); color:var(--blue); background:rgba(27,94,166,0.08); font-weight:600; }
+.error-search-bar { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+.error-search-input { flex:1; background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.12); border-radius:10px; padding:11px 16px; color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.92rem; outline:none; transition:border-color 0.2s; }
+body.theme-dark .error-search-input { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.1); }
+.error-search-input:focus { border-color:var(--blue); }
+.error-search-input::placeholder { color:var(--muted); }
+.sort-select { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.12); border-radius:8px; padding:9px 12px; color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.85rem; outline:none; cursor:pointer; }
+body.theme-dark .sort-select { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.12); color:var(--white); }
+.sort-select option { background:#fff; }
+body.theme-dark .sort-select option { background:#252535; }
+.error-log-empty { text-align:center; padding:50px 20px; color:var(--muted); }
+.error-log-empty .big-icon { font-size:2.8rem; margin-bottom:14px; }
+.error-entry { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:16px 18px; margin-bottom:10px; animation:fadeUp 0.3s ease; }
+body.theme-dark .error-entry { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+.error-entry-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.error-source-badge { font-size:0.7rem; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; padding:3px 10px; border-radius:20px; }
+.badge-chat       { background:rgba(27,79,138,0.2); color:#5A9FD4; }
+.badge-schreiben  { background:rgba(45,122,79,0.2); color:#5CC488; }
+.badge-bild       { background:rgba(232,184,75,0.2); color:var(--accent); }
+.badge-test       { background:rgba(200,16,46,0.15); color:#F07070; }
+.badge-übung      { background:rgba(150,80,200,0.2); color:#C89EF0; }
+.badge-insel      { background:rgba(27,94,166,0.2); color:#7BA8E0; }
+.error-date { font-size:0.72rem; color:var(--muted); margin-left:auto; }
+.del-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:0.9rem; padding:3px 8px; border-radius:6px; transition:color 0.2s; line-height:1; }
+.del-btn:hover { color:#F07070; }
+.archive-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:0.85rem; padding:3px 8px; border-radius:6px; transition:color 0.2s; line-height:1; }
+.archive-btn:hover { color:var(--accent); }
+.error-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:8px; }
+.error-col label { font-size:0.68rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:3px; }
+.error-wrong { color:#F07070; font-size:0.9rem; }
+.error-right { color:#5CC488; font-size:0.9rem; font-weight:500; }
+.error-tip { font-size:0.84rem; color:var(--muted); line-height:1.5; border-top:1px solid rgba(0,0,0,0.06); padding-top:8px; margin-top:4px; }
+body.theme-dark .error-tip { border-top-color:rgba(255,255,255,0.07); }
+.error-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.error-tag { font-size:0.7rem; font-weight:600; letter-spacing:0.05em; padding:2px 9px; border-radius:20px; cursor:pointer; transition:filter 0.15s; }
+.error-tag:hover { filter:brightness(1.2); }
+.tag-grammar      { background:rgba(200,16,46,0.15); color:#F07070; border:1px solid rgba(200,16,46,0.3); }
+.tag-wortstellung { background:rgba(27,79,138,0.2); color:#7BB5F0; border:1px solid rgba(27,79,138,0.3); }
+.tag-wortwahl     { background:rgba(232,184,75,0.15); color:var(--accent); border:1px solid rgba(232,184,75,0.3); }
+.tag-aussprache   { background:rgba(150,80,200,0.18); color:#C89EF0; border:1px solid rgba(150,80,200,0.3); }
+.tag-leicht       { background:rgba(45,122,79,0.15); color:#5CC488; border:1px solid rgba(45,122,79,0.3); }
+.tag-mittel       { background:rgba(200,120,30,0.15); color:#F0A060; border:1px solid rgba(200,120,30,0.3); }
+.tag-schwer       { background:rgba(180,30,30,0.18); color:#F07070; border:1px solid rgba(180,30,30,0.3); }
+.tag-reisen       { background:rgba(27,94,166,0.15); color:#7BA8E0; border:1px solid rgba(27,94,166,0.3); }
+.tag-gesundheit   { background:rgba(45,150,100,0.15); color:#5CC488; border:1px solid rgba(45,150,100,0.3); }
+.tag-alltag       { background:rgba(100,80,160,0.15); color:#B0A0F0; border:1px solid rgba(100,80,160,0.3); }
+.tag-familie      { background:rgba(232,100,184,0.15); color:#F080C0; border:1px solid rgba(232,100,184,0.3); }
+.tag-formell      { background:rgba(80,80,80,0.15); color:#A0A0A0; border:1px solid rgba(80,80,80,0.2); }
+.export-btns { display:flex; gap:8px; flex-wrap:wrap; }
+.tag-filter-section { margin-bottom:14px; }
+.tag-filter-label { font-size:0.72rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; display:block; }
+.log-mode-switcher { display:flex; gap:8px; margin-bottom:16px; }
+.log-mode-btn { padding:8px 18px; border-radius:8px; border:1px solid rgba(0,0,0,0.12); background:transparent; color:var(--muted); font-family:'DM Sans',sans-serif; font-size:0.88rem; cursor:pointer; transition:all 0.2s; min-height:40px; }
+body.theme-dark .log-mode-btn { border-color:rgba(255,255,255,0.12); }
+.log-mode-btn.active { background:rgba(27,94,166,0.1); border-color:var(--blue); color:var(--blue); font-weight:600; }
+
+/* ── WORTINSELN ── */
+.oe-card { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:16px; margin-bottom:10px; }
+body.theme-dark .oe-card { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+.oe-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.oe-icon { font-size:1.3rem; }
+.oe-name { font-weight:600; font-size:0.95rem; flex:1; }
+.oe-count { font-size:0.75rem; color:var(--muted); }
+.oe-phrase-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.06); font-size:0.88rem; align-items:center; }
+body.theme-dark .oe-phrase-row { border-bottom-color:rgba(255,255,255,0.06); }
+.oe-en { color:var(--blue); font-weight:500; }
+.oe-de { color:var(--muted); }
+.oe-phrases-preview { margin-top:8px; }
+.insel-view-header { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+.insel-view-title { font-family:'Fraunces',serif; font-size:1.3rem; }
+.insel-phrase-list { margin-bottom:18px; }
+.empty-hint { color:var(--muted); font-size:0.88rem; padding:16px 0; }
+
+/* ── TEST ── */
+.test-question-card { background:rgba(255,255,255,0.06); border:1px solid rgba(0,0,0,0.08); border-radius:14px; padding:22px; }
+body:not(.theme-dark) .test-question-card { background:rgba(255,255,255,0.8); }
+.test-q-text { font-family:'Fraunces',serif; font-size:1.05rem; line-height:1.6; margin-bottom:18px; color:var(--white); }
+.test-opts { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.test-opt-btn { padding:12px 20px; border-radius:10px; border:1px solid rgba(0,0,0,0.12); background:rgba(255,255,255,0.7); color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.93rem; cursor:pointer; transition:all 0.2s; text-align:left; min-height:48px; }
+body.theme-dark .test-opt-btn { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.12); }
+.test-opt-btn:hover:not(:disabled) { border-color:var(--blue); background:rgba(27,94,166,0.1); }
+.test-opt-btn.correct { background:rgba(45,122,79,0.15); border-color:#5CC488; color:#5CC488; }
+.test-opt-btn.wrong { background:rgba(200,16,46,0.1); border-color:#F07070; color:#F07070; }
+.test-feedback { font-size:0.88rem; margin-top:8px; }
+.test-progress { font-size:0.82rem; color:var(--muted); margin-bottom:14px; }
+.test-result-card { background:linear-gradient(135deg,rgba(27,94,166,0.15),rgba(45,122,79,0.1)); border:1px solid rgba(27,94,166,0.2); border-radius:16px; padding:28px; text-align:center; }
+.test-score { font-family:'Fraunces',serif; font-size:2.5rem; color:var(--blue); margin-bottom:10px; }
+.test-result-msg { font-size:0.95rem; color:var(--muted); }
+
+/* ── LESEN ── */
+.read-zone { border:2px dashed rgba(0,0,0,0.15); border-radius:12px; padding:40px 20px; text-align:center; cursor:pointer; transition:all 0.2s; position:relative; }
+body.theme-dark .read-zone { border-color:rgba(255,255,255,0.2); }
+.read-zone:hover { border-color:var(--blue); background:rgba(27,94,166,0.04); }
+.read-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.read-active-area { display:none; }
+.read-file-name { font-weight:600; color:var(--blue); margin-bottom:14px; }
+.read-question-area { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.read-question-area input { flex:1; min-width:200px; }
+
+/* ── NOTIZEN ── */
+.note-editor-wrap { margin-bottom:20px; }
+.note-editor { width:100%; background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.12); border-radius:12px; padding:16px 18px; color:var(--white); font-family:'DM Sans',sans-serif; font-size:0.95rem; resize:vertical; min-height:100px; outline:none; transition:border-color 0.2s; line-height:1.65; }
+body.theme-dark .note-editor { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.1); }
+.note-editor:focus { border-color:var(--blue); }
+.note-editor::placeholder { color:var(--muted); }
+.note-card { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:16px; margin-bottom:10px; }
+body.theme-dark .note-card { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+.note-header { display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+.note-date { font-size:0.72rem; color:var(--muted); }
+.note-text { font-size:0.92rem; line-height:1.6; color:var(--white); }
+.note-corrected { background:rgba(45,122,79,0.08); border:1px solid rgba(45,122,79,0.2); border-radius:8px; padding:10px 14px; margin-top:10px; font-size:0.88rem; line-height:1.6; color:var(--muted); }
+
+/* ── WÖRTER ── */
+.word-input-row { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-bottom:14px; align-items:end; }
+.word-card { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:10px; padding:14px; margin-bottom:8px; display:flex; align-items:flex-start; gap:10px; }
+body.theme-dark .word-card { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.08); }
+.word-en { font-weight:600; font-size:0.95rem; color:var(--blue); flex:1; }
+.word-de { font-size:0.88rem; color:var(--muted); flex:1; }
+.word-example { font-size:0.82rem; color:var(--muted); font-style:italic; flex:2; }
+.word-lookup-result { font-size:0.85rem; color:var(--muted); margin-bottom:10px; min-height:20px; }
+
+/* ── EINSTELLUNGEN Modal ── */
+.settings-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; align-items:flex-start; justify-content:center; padding:40px 20px; overflow-y:auto; }
+.settings-panel { background:#F2EDE5; border-radius:18px; padding:28px; max-width:500px; width:100%; position:relative; }
+body.theme-dark .settings-panel { background:#252535; }
+.settings-close { position:absolute; top:16px; right:18px; background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--muted); padding:6px; }
+.settings-section { margin-bottom:22px; }
+.settings-section-title { font-weight:600; font-size:0.88rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+.settings-label { font-size:0.93rem; color:var(--white); }
+
+/* ── Chips (Interessen / Motivationen) ── */
+.chip-group { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.chip { padding:8px 14px; border-radius:20px; border:2px solid rgba(0,0,0,0.12); background:rgba(255,255,255,0.7); cursor:pointer; font-size:0.88rem; font-family:'DM Sans',sans-serif; transition:all 0.18s; user-select:none; color:var(--white); }
+.chip:hover { border-color:var(--blue); background:rgba(27,94,166,0.07); }
+.chip.selected { background:var(--blue); color:white; border-color:var(--blue); }
+body.theme-dark .chip { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.14); }
+body.theme-dark .chip.selected { background:var(--blue); border-color:var(--blue); }
+
+/* ── Onboarding Modal ── */
+.onboarding-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:510; align-items:center; justify-content:center; padding:20px; overflow-y:auto; }
+.onboarding-panel { background:#F2EDE5; border-radius:20px; padding:36px 32px 28px; max-width:520px; width:100%; position:relative; }
+body.theme-dark .onboarding-panel { background:#252535; }
+.onboarding-step { display:none; }
+.onboarding-step.active { display:block; }
+.onboarding-icon { font-size:2.5rem; margin-bottom:12px; }
+.onboarding-title { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; margin-bottom:6px; color:var(--white); }
+.onboarding-sub { font-size:0.9rem; color:var(--muted); margin-bottom:18px; line-height:1.6; }
+.onboarding-progress { display:flex; gap:6px; margin-bottom:24px; }
+.onboarding-dot { height:4px; flex:1; background:rgba(0,0,0,0.1); border-radius:2px; transition:background 0.2s; }
+body.theme-dark .onboarding-dot { background:rgba(255,255,255,0.1); }
+.onboarding-dot.active { background:var(--blue); }
+.onboarding-btns { display:flex; gap:10px; margin-top:24px; justify-content:flex-end; }
+
+/* ── STREAK / TOAST ── */
+.streak-confetti { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); font-size:2.5rem; pointer-events:none; z-index:1000; animation:confettiBurst 1.4s ease forwards; }
+@keyframes confettiBurst { 0%{opacity:1;transform:translate(-50%,-50%) scale(0.5)} 50%{opacity:1;transform:translate(-50%,-50%) scale(1.8)} 100%{opacity:0;transform:translate(-50%,-80%) scale(1.5)} }
+.streak-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--blue); color:white; padding:12px 24px; border-radius:25px; font-size:0.95rem; font-weight:600; z-index:1000; animation:toastIn 0.4s ease, toastOut 0.4s ease 2.3s forwards; white-space:nowrap; }
+@keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+@keyframes toastOut { from{opacity:1} to{opacity:0} }
+
+/* ── LOADING ── */
+.loading-dots { display:flex; gap:4px; align-items:center; padding:4px 0; }
+.loading-dots span { width:7px; height:7px; background:var(--muted); border-radius:50%; animation:dot 1.2s infinite; }
+.loading-dots span:nth-child(2) { animation-delay:0.2s; }
+.loading-dots span:nth-child(3) { animation-delay:0.4s; }
+@keyframes dot { 0%,80%,100%{opacity:0.3;transform:scale(0.8)} 40%{opacity:1;transform:scale(1)} }
+
+/* ── BOTTOM NAV (Mobile) ── */
+.bottom-nav { display:none; position:fixed; bottom:0; left:0; right:0; background:rgba(255,255,255,0.97); border-top:1px solid rgba(0,0,0,0.1); padding:6px 0; z-index:99; }
+body.theme-dark .bottom-nav { background:rgba(26,26,42,0.97); border-top-color:rgba(255,255,255,0.08); }
+.bottom-nav-inner { display:flex; justify-content:space-around; max-width:500px; margin:0 auto; }
+.bottom-nav-item { display:flex; flex-direction:column; align-items:center; padding:6px 8px; color:var(--muted); cursor:pointer; position:relative; border:none; background:none; font-family:'DM Sans',sans-serif; min-width:50px; }
+.bottom-nav-item.active { color:var(--blue); }
+.bottom-nav-item .nav-icon { font-size:1.3rem; }
+.bottom-nav-item .nav-label { font-size:0.62rem; margin-top:2px; font-weight:500; }
+.bottom-nav-badge { position:absolute; top:4px; right:8px; background:#C8102E; color:white; font-size:0.55rem; font-weight:700; min-width:13px; height:13px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0 2px; }
+
+/* ── Header Mini-Badges ── */
+.header-mini-badge { background:rgba(0,0,0,0.06); border:1px solid rgba(0,0,0,0.1); border-radius:14px; padding:5px 11px; font-size:0.8rem; font-weight:600; cursor:pointer; color:var(--white); display:flex; align-items:center; gap:4px; transition:all 0.2s; min-height:34px; }
+.header-mini-badge:hover { background:rgba(27,94,166,0.1); border-color:var(--blue); color:var(--blue); }
+body.theme-dark .header-mini-badge { background:rgba(255,255,255,0.08); border-color:rgba(255,255,255,0.12); }
+
+/* ── Desktop Mehr-Dropdown ── */
+.more-tab-wrap { position:relative; }
+.more-dropdown { position:absolute; top:calc(100% + 6px); left:0; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.14); min-width:190px; z-index:300; padding:6px; }
+body.theme-dark .more-dropdown { background:#252535; border-color:rgba(255,255,255,0.12); }
+.more-dropdown button { display:flex; align-items:center; gap:10px; width:100%; padding:10px 14px; border:none; background:transparent; cursor:pointer; border-radius:7px; font-family:'DM Sans',sans-serif; font-size:0.92rem; color:var(--white); text-align:left; transition:background 0.15s; min-height:42px; }
+.more-dropdown button:hover { background:rgba(27,94,166,0.08); color:var(--blue); }
+.more-dropdown hr { border:none; border-top:1px solid rgba(0,0,0,0.08); margin:4px 0; }
+body.theme-dark .more-dropdown hr { border-top-color:rgba(255,255,255,0.08); }
+
+/* ── Tutorial Modal ── */
+.tutorial-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:500; align-items:center; justify-content:center; padding:20px; }
+.tutorial-panel { background:#F2EDE5; border-radius:20px; padding:36px 32px 28px; max-width:480px; width:100%; text-align:center; position:relative; }
+body.theme-dark .tutorial-panel { background:#252535; }
+.tutorial-icon { font-size:3rem; margin-bottom:14px; line-height:1; }
+.tutorial-title { font-family:'Fraunces',serif; font-size:1.5rem; font-weight:700; margin-bottom:12px; color:var(--white); }
+.tutorial-text { font-size:0.97rem; line-height:1.75; color:var(--white); margin-bottom:20px; }
+.tutorial-progress { font-size:0.8rem; color:var(--muted); margin-bottom:14px; }
+.tutorial-action-btn { width:100%; margin-bottom:14px; }
+.tutorial-btns { display:flex; gap:10px; justify-content:center; }
+.tutorial-close { position:absolute; top:14px; right:18px; background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--muted); padding:4px 8px; }
+
+/* ── Info-Box (Senior-Erklärungen) ── */
+.info-box { background:rgba(27,94,166,0.07); border:1px solid rgba(27,94,166,0.18); border-radius:10px; padding:12px 16px; font-size:0.88rem; line-height:1.6; color:var(--white); }
+body.theme-dark .info-box { background:rgba(27,94,166,0.13); border-color:rgba(27,94,166,0.3); }
+
+/* ── Mehr-Menü (Mobile) ── */
+.more-menu { position:fixed; inset:0; z-index:150; }
+.more-menu-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.4); }
+.more-menu-panel { position:absolute; bottom:70px; left:0; right:0; background:#fff; border-radius:20px 20px 0 0; padding:16px 0 24px; box-shadow:0 -4px 24px rgba(0,0,0,0.15); }
+body.theme-dark .more-menu-panel { background:#252535; }
+.more-menu-title { font-size:0.75rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); padding:0 20px 10px; }
+.more-menu-item { display:flex; align-items:center; gap:14px; width:100%; padding:14px 20px; border:none; background:none; font-family:'DM Sans',sans-serif; font-size:1rem; color:var(--white); cursor:pointer; transition:background 0.15s; }
+.more-menu-item:hover { background:rgba(27,94,166,0.08); }
+.more-menu-item span:first-child { font-size:1.3rem; width:28px; }
+
+/* ── Lesen: generierter Text + Vokabeln ── */
+.read-generated-text { background:rgba(255,255,255,0.7); border:1px solid rgba(0,0,0,0.08); border-radius:12px; padding:18px; font-size:0.97rem; line-height:1.75; color:var(--white); margin-bottom:12px; }
+body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.1); }
+.read-vokabeln { background:rgba(27,94,166,0.07); border:1px solid rgba(27,94,166,0.15); border-radius:10px; padding:14px 18px; font-size:0.9rem; line-height:1.8; }
+
+/* ── Wörter-Tab: Beispielsatz ── */
+.word-lookup-result { font-size:0.88rem; color:var(--blue); font-style:italic; min-height:22px; padding:4px 0; }
+
+@media(max-width:640px){
+  header { padding:11px 14px; }
+  header .logo { font-size:1.2rem; }
+  nav { display:none; }
+  .bottom-nav { display:block; }
+  main { padding:18px 14px 88px; }
+  .stats-grid { grid-template-columns:repeat(2,1fr); }
+  .persona-grid { grid-template-columns:1fr 1fr; }
+  .error-row { grid-template-columns:1fr; }
+  .font-size-btns { display:none; }
+}
+@media(min-width:641px){
+  .bottom-nav { display:none; }
+  .more-menu  { display:none !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-flag"></div>
+    Headway
+  </div>
+  <div class="header-right">
+    <div class="rate-limit-badge" id="rateLimitBadge">
+      Noch <span id="rateLimitCount">50</span> heute
+    </div>
+    <button class="header-mini-badge" id="hdrErrBadge" onclick="showTab('log')" style="display:none;" title="Fehlerlog öffnen">
+      📋 <span id="hdrErrCount">0</span>
+    </button>
+    <button class="header-mini-badge" id="hdrNotesBadge" onclick="showTab('notizen')" style="display:none;" title="Notizen öffnen">
+      📝 <span id="hdrNotesCount">0</span>
+    </button>
+    <button class="header-mini-badge" id="hdrWordsBadge" onclick="showTab('woerter')" style="display:none;" title="Wörter öffnen">
+      💾 <span id="hdrWordsCount">0</span>
+    </button>
+    <div class="streak-badge" id="streakBadge">
+      🔥 <span id="streakCount">0</span>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙️</button>
+  </div>
+</header>
+
+<nav>
+  <button class="tab active" onclick="showTab('start')">🏠 Start</button>
+  <button class="tab" onclick="showTab('chat')">💬 Gespräch</button>
+  <button class="tab" onclick="showTab('ueben')">✍️ Üben</button>
+  <button class="tab" onclick="showTab('test')">🎯 Test</button>
+  <div class="more-tab-wrap">
+    <button class="tab" id="moreDesktopBtn" onclick="toggleMoreDropdown(event)">
+      ☰ Mehr ▾
+      <span class="err-badge" id="errBadge" style="display:none">0</span>
+    </button>
+    <div class="more-dropdown" id="moreDropdown" style="display:none;">
+      <button onclick="moreTabClick('log')">📋 Fehlerlog <span id="errBadgeLog" style="display:none;background:#C8102E;color:white;font-size:0.65rem;padding:1px 5px;border-radius:8px;margin-left:auto;"></span></button>
+      <button onclick="moreTabClick('wortinseln')">🗺️ Wortinseln</button>
+      <button onclick="moreTabClick('lesen')">📚 Lesen</button>
+      <button onclick="moreTabClick('notizen')">📝 Notizen</button>
+      <button onclick="moreTabClick('woerter')">💾 Meine Wörter</button>
+      <hr>
+      <button onclick="openSettings();closeMoreDropdown()">⚙️ Einstellungen</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+<!-- ══ START ══════════════════════════════════════════════════════════ -->
+<div class="section active" id="start">
+
+  <!-- Anfänger-Guide (nur A1/A2) -->
+  <div id="beginnerGuide" style="display:none;margin-bottom:20px;">
+    <div class="card" style="border-left:4px solid var(--blue);padding-left:20px;">
+      <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Dein Einstieg als Anfänger</div>
+      <p style="font-size:0.93rem;line-height:1.65;margin-bottom:14px;">Noch wenig Englisch? Kein Problem – hier ist ein guter Weg zum Anfangen:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="showTab('wortinseln')">1. Wortinsel anlegen – z.B. "Begrüßungen" oder "Im Café" →</button>
+        <button class="btn btn-ghost btn-sm" onclick="showTab('ueben');switchWriteMode('luecken',document.querySelector('[onclick*=luecken]'))">2. Lückenübungen – einfach auf das richtige Wort klicken →</button>
+        <button class="btn btn-ghost btn-sm" onclick="showTab('chat')">3. Erstes Gespräch mit Emma – schreib einfach drauflos →</button>
+      </div>
+      <p style="font-size:0.8rem;color:var(--muted);margin-top:12px;">Tipp: Du kannst dein Niveau jederzeit in den Einstellungen ändern – die KI passt sich automatisch an.</p>
+    </div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-label">Heutige Aufgabe</div>
+    <div class="challenge-icon" id="challengeIcon">✍️</div>
+    <div class="challenge-title" id="challengeTitle">Laden…</div>
+    <div class="challenge-desc" id="challengeDesc">Bitte warten.</div>
+    <button class="btn btn-primary" id="useChallengeBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);">
+      ✍️ Jetzt schreiben
+    </button>
+  </div>
+
+  <div class="tip-card">
+    <div class="tip-cat" id="tipCat">Tipp</div>
+    <div class="tip-text" id="tipText">Lädt…</div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-number" id="statDailyWords">0</div>
+      <div class="stat-label" id="statDailyLabel">Wörter heute</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="statStreakHome">0</div>
+      <div class="stat-label">Tage in Folge</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="statChats">0</div>
+      <div class="stat-label">Gespräche</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="statErrors">0</div>
+      <div class="stat-label">Fehler gespeichert</div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-size:0.78rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Aktivität (letzte 7 Tage)</div>
+    <div class="activity-chart" id="activityChart"></div>
+  </div>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-size:0.78rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Stärken &amp; Schwächen</div>
+    <div id="swWidget"></div>
+  </div>
+
+  <div class="level-badge">Ihr Niveau: <span id="levelDisplay">–</span></div>
+</div>
+
+<!-- ══ CHAT ══════════════════════════════════════════════════════════ -->
+<div class="section" id="chat">
+  <div class="section-title">💬 Gespräch üben</div>
+  <div class="section-sub">Unterhalte dich auf Englisch – die KI antwortet und korrigiert freundlich.</div>
+
+  <div class="info-box" style="margin-bottom:18px;">
+    💡 <strong>So geht's:</strong> Wähl eine Person aus und schreib einfach auf Englisch – so gut du kannst. Die KI antwortet auf Englisch und zeigt dir danach, ob du einen Fehler gemacht hast und wie es richtig wäre.
+  </div>
+
+  <div class="persona-grid">
+    <div class="persona-card" id="personaEmma" onclick="selectPersona('emma')">
+      <div class="persona-icon">👩‍🏫</div>
+      <div class="persona-name">Emma</div>
+      <div class="persona-role">Lehrerin · Britisch</div>
+    </div>
+    <div class="persona-card" id="personaJames" onclick="selectPersona('james')">
+      <div class="persona-icon">👨‍💼</div>
+      <div class="persona-name">James</div>
+      <div class="persona-role">Freund · Amerikanisch</div>
+    </div>
+    <div class="persona-card" id="personaFrei" onclick="openFreePersona()">
+      <div class="persona-icon">🎭</div>
+      <div class="persona-name">Freie Situation</div>
+      <div class="persona-role">Eigene Situation</div>
+    </div>
+  </div>
+
+  <div class="free-persona-box" id="freePersonaBox">
+    <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Beschreib die Situation auf Deutsch (z.B. "Im Hotel in London", "Am Flughafen"):</div>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="freePersonaInput" class="context-input" style="flex:1;margin-bottom:0;" placeholder="z.B. Im Restaurant bestellen">
+      <button class="btn btn-primary" onclick="startFreePersona()">Los!</button>
+    </div>
+  </div>
+
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="avatar" id="chatAvatar">👩‍🏫</div>
+      <div>
+        <div class="chat-persona-name" id="chatName">Emma</div>
+        <div class="chat-persona-role" id="chatRole">Lehrerin · Britisches Englisch</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="clearChat()">Neu starten</button>
+    </div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div style="padding:8px 14px 0;display:none;" id="chatFilePreviewWrap">
+      <div class="file-preview-wrap" id="chatFilePreview">
+        <div id="chatFileThumb"></div>
+        <span class="file-preview-name" id="chatFileName"></span>
+        <button class="file-preview-remove" onclick="removeChatFile()">✕</button>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+        <div id="chatFilePreview" class="file-preview-wrap" style="display:none;">
+          <div id="chatFileThumb"></div>
+          <span class="file-preview-name" id="chatFileName"></span>
+          <button class="file-preview-remove" onclick="removeChatFile()">✕</button>
+        </div>
+        <textarea id="chatInput" rows="1" placeholder="Schreib auf Englisch… (Enter = Senden)"></textarea>
+      </div>
+      <label class="chat-attach-btn chat-attach-wrap" id="chatAttachBtn" title="Bild/PDF anhängen">
+        📎
+        <input type="file" accept="image/*,application/pdf" style="display:none;" onchange="handleChatFileSelect(this)">
+      </label>
+      <button class="btn btn-primary" onclick="sendChat()" style="min-width:80px;">Senden</button>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:0.8rem;color:var(--muted);text-align:center;">
+    💡 Fehler in Ihrer Nachricht werden automatisch im Fehlerlog gespeichert.
+  </div>
+</div>
+
+<!-- ══ ÜBEN ══════════════════════════════════════════════════════════ -->
+<div class="section" id="ueben">
+  <div class="section-title">✍️ Englisch üben</div>
+  <div class="section-sub">Vier Übungsarten – wähl einfach, womit du heute üben möchtest.</div>
+
+  <div class="tabs-write">
+    <button class="tab-write active" onclick="switchWriteMode('schreiben',this)">✍️ Schreiben</button>
+    <button class="tab-write" onclick="switchWriteMode('bild',this)">📷 Handschrift</button>
+    <button class="tab-write" onclick="switchWriteMode('grammatik',this)">📐 Grammatik</button>
+    <button class="tab-write" onclick="switchWriteMode('luecke',this)">📋 Lückenübungen</button>
+  </div>
+
+  <!-- Schreiben -->
+  <div class="write-mode active" id="writeModeSchreiben">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Schreib einen englischen Text – so gut du kannst. Dann klick auf "Korrigieren lassen". Die KI zeigt dir freundlich, was du gut gemacht hast und was verbessert werden kann.</div>
+    <div class="writing-prompt-card">
+      <div class="writing-prompt-label">Vorschlag</div>
+      <div class="writing-prompt-text" id="writingPromptText">Erzähl von deinem gestrigen Tag auf Englisch.</div>
+    </div>
+    <div id="writingFilePreview" class="file-preview-wrap" style="display:none;margin-bottom:10px;">
+      <div id="writingFileThumb"></div>
+      <span class="file-preview-name" id="writingFileName"></span>
+      <button class="file-preview-remove" onclick="removeWritingFile()">✕</button>
+    </div>
+    <textarea class="writing-editor" id="writingEditor" placeholder="Schreib hier auf Englisch…"></textarea>
+    <div class="writing-actions">
+      <button class="btn btn-primary" id="writingSubmitBtn" onclick="submitWriting()">✔ Korrigieren lassen</button>
+      <button class="btn btn-ghost" onclick="getWritingPrompt()">🎲 Neues Thema</button>
+      <label class="btn btn-ghost" id="writingAttachBtn" title="Bild oder PDF anhängen">
+        📎 Anhängen
+        <input type="file" accept="image/*,application/pdf" style="display:none;" onchange="handleWritingFileSelect(this)">
+      </label>
+    </div>
+    <div id="writingFeedback"></div>
+  </div>
+
+  <!-- Handschrift -->
+  <div class="write-mode" id="writeModeBild">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Schreib einen englischen Text mit der Hand auf Papier. Fotografier ihn mit deinem Handy. Lade das Foto hier hoch – die KI liest deine Handschrift und korrigiert sie freundlich.</div>
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" accept="image/*" id="imageFileInput" onchange="handleImageUpload(event)">
+      <div class="upload-zone-icon">📷</div>
+      <div class="upload-zone-text"><strong>Foto auswählen oder hier ablegen</strong><br>JPG, PNG, HEIC</div>
+    </div>
+    <img class="upload-preview" id="uploadPreview" alt="Vorschau">
+    <div id="imageExtrasWrap" style="display:none;">
+      <input type="text" class="context-input" id="imageContextInput" placeholder="Thema oder Aufgabe (optional, z.B. 'Beschreibung meines Gartens')">
+      <div class="writing-actions">
+        <button class="btn btn-primary" id="imageSubmitBtn" onclick="submitImageWriting()">📷 Handschrift analysieren</button>
+        <button class="btn btn-ghost" onclick="clearImageUpload()">✕ Bild entfernen</button>
+      </div>
+    </div>
+    <div id="writingFeedback"></div>
+  </div>
+
+  <!-- Grammatik -->
+  <div class="write-mode" id="writeModeGrammatik">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Wähl ein Grammatik-Thema aus der Liste. Du siehst dann die Regel auf Deutsch erklärt – mit Beispielen, was falsch und was richtig ist.</div>
+    <div class="gram-cat-btns" id="gramCatBtns">
+      <button class="gram-cat-btn active" data-rule="articles" onclick="selectGrammarRule('articles')">Artikel</button>
+      <button class="gram-cat-btn" data-rule="present_simple" onclick="selectGrammarRule('present_simple')">Present Simple</button>
+      <button class="gram-cat-btn" data-rule="past_simple" onclick="selectGrammarRule('past_simple')">Simple Past</button>
+      <button class="gram-cat-btn" data-rule="present_perfect" onclick="selectGrammarRule('present_perfect')">Present Perfect</button>
+      <button class="gram-cat-btn" data-rule="future" onclick="selectGrammarRule('future')">Zukunft</button>
+      <button class="gram-cat-btn" data-rule="modals" onclick="selectGrammarRule('modals')">Modalverben</button>
+      <button class="gram-cat-btn" data-rule="questions" onclick="selectGrammarRule('questions')">Fragen</button>
+      <button class="gram-cat-btn" data-rule="negation" onclick="selectGrammarRule('negation')">Verneinung</button>
+      <button class="gram-cat-btn" data-rule="prepositions" onclick="selectGrammarRule('prepositions')">Präpositionen</button>
+      <button class="gram-cat-btn" data-rule="comparatives" onclick="selectGrammarRule('comparatives')">Komparativ</button>
+      <button class="gram-cat-btn" data-rule="pronouns" onclick="selectGrammarRule('pronouns')">Pronomen</button>
+      <button class="gram-cat-btn" data-rule="polite" onclick="selectGrammarRule('polite')">Höflichkeit</button>
+    </div>
+    <div id="grammarRuleContent"></div>
+  </div>
+
+  <!-- Lückenübungen -->
+  <div class="write-mode" id="writeModeLuecke">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Ein englischer Satz wird angezeigt – mit einer Lücke. Klick auf das richtige Wort. Du siehst sofort, ob es richtig war und warum.</div>
+    <div class="filter-btns" id="luckeCatSelect" style="margin-bottom:18px;"></div>
+    <div id="luckeExerciseArea"></div>
+  </div>
+</div>
+
+<!-- ══ FEHLERLOG ══════════════════════════════════════════════════════ -->
+<div class="section" id="log">
+  <div class="section-title">
+    📋 Fehlerlog
+    <span class="err-badge" id="errBadgeLog" style="display:none;position:static;margin-left:6px;">0</span>
+  </div>
+  <div class="section-sub">Hier werden alle deine Fehler automatisch gesammelt – damit du gezielt üben kannst.</div>
+  <div class="info-box" style="margin-bottom:16px;">💡 Jedes Mal, wenn die KI einen Fehler in deinem Englisch entdeckt, wird er hier gespeichert – mit der richtigen Version und einer Erklärung. So siehst du mit der Zeit, wo du dich verbessert hast.</div>
+  <input id="logModeActive" type="hidden" value="fehler">
+  <div class="log-mode-switcher">
+    <button class="log-mode-btn active" onclick="this.classList.add('active');document.querySelector('.log-mode-btn:not(.active)')?.classList.remove('active');document.getElementById('logModeActive').value='fehler';renderErrors()">📋 Aktive Fehler</button>
+    <button class="log-mode-btn" onclick="this.classList.add('active');document.querySelector('.log-mode-btn.active:not(this)')?.classList.remove('active');document.getElementById('logModeActive').value='archiv';renderErrors()">📦 Archiv</button>
+  </div>
+  <div class="error-log-controls">
+    <span class="error-count-badge" id="errorCountBadge">0 Fehler gespeichert</span>
+    <div class="export-btns">
+      <button class="btn-export" onclick="exportCSV()">📥 CSV Export</button>
+      <button class="btn-export" onclick="clearAllErrors()" style="color:#F07070;">🗑 Alle löschen</button>
+    </div>
+  </div>
+  <div class="filter-btns" style="margin-bottom:12px;">
+    <button class="filter-btn active" onclick="setFilter('alle',this)">Alle</button>
+    <button class="filter-btn" onclick="setFilter('chat',this)">💬 Gespräch</button>
+    <button class="filter-btn" onclick="setFilter('schreiben',this)">✍️ Schreiben</button>
+    <button class="filter-btn" onclick="setFilter('test',this)">🎯 Test</button>
+    <button class="filter-btn" onclick="setFilter('übung',this)">📋 Übung</button>
+  </div>
+  <div class="tag-filter-section">
+    <span class="tag-filter-label">Nach Typ filtern:</span>
+    <button class="tag-filter-btn tag-grammar" data-tag="grammar" onclick="toggleTagFilter('grammar')">Grammatik</button>
+    <button class="tag-filter-btn tag-wortstellung" data-tag="wortstellung" onclick="toggleTagFilter('wortstellung')">Wortstellung</button>
+    <button class="tag-filter-btn tag-wortwahl" data-tag="wortwahl" onclick="toggleTagFilter('wortwahl')">Wortwahl</button>
+    <button class="tag-filter-btn tag-leicht" data-tag="leicht" onclick="toggleTagFilter('leicht')">Leicht</button>
+    <button class="tag-filter-btn tag-mittel" data-tag="mittel" onclick="toggleTagFilter('mittel')">Mittel</button>
+    <button class="tag-filter-btn tag-schwer" data-tag="schwer" onclick="toggleTagFilter('schwer')">Schwer</button>
+  </div>
+  <div class="error-search-bar">
+    <input type="text" class="error-search-input" id="errorSearchInput" placeholder="Fehler durchsuchen…" oninput="renderErrors()">
+    <select class="sort-select" id="errorSortSelect" onchange="renderErrors()">
+      <option value="newest">Neueste zuerst</option>
+      <option value="oldest">Älteste zuerst</option>
+      <option value="source">Nach Quelle</option>
+    </select>
+  </div>
+  <div id="errorList"></div>
+</div>
+
+<!-- ══ WORTINSELN ══════════════════════════════════════════════════════ -->
+<div class="section" id="wortinseln">
+  <div class="section-title">🗺️ Wortinseln</div>
+  <div class="section-sub">Sammel Vokabeln zu einem Thema – die KI hilft dir dabei.</div>
+  <div class="info-box" style="margin-bottom:18px;">💡 <strong>Was ist eine Wortinsel?</strong> Eine Wortinsel ist eine Sammlung von Wörtern und Sätzen zu einem bestimmten Thema – z.B. "Im Hotel" oder "Beim Arzt". Erstell eine Insel, starte das KI-Interview, und die KI fragt dich, was du brauchst – dann liefert sie passende englische Phrasen mit Übersetzung.</div>
+
+  <div id="inselViewWrap" style="display:none;">
+    <div class="insel-view-header">
+      <button class="btn btn-ghost btn-sm" onclick="closeInsel()">← Zurück</button>
+      <div class="insel-view-title" id="inselViewName"></div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <button class="btn btn-primary" onclick="startInselInterview()">🤖 KI-Interview starten</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportInselCSV(-1)" style="margin-left:8px;">📥 CSV</button>
+    </div>
+    <div id="inselChatMessages" style="min-height:60px;margin-bottom:16px;"></div>
+    <div class="insel-phrase-list" id="inselPhraseList"></div>
+  </div>
+
+  <div id="inselMainWrap">
+    <div style="display:flex;gap:10px;margin-bottom:20px;">
+      <input type="text" id="newInselName" class="context-input" style="flex:1;margin-bottom:0;" placeholder="Thema der Insel (z.B. Beim Arzt, Im Hotel, Reisen)">
+      <button class="btn btn-primary" onclick="createInsel()">+ Erstellen</button>
+    </div>
+    <div id="inselList"></div>
+  </div>
+</div>
+
+<!-- ══ TEST ══════════════════════════════════════════════════════════ -->
+<div class="section" id="test">
+  <div class="section-title">🎯 Test</div>
+  <div class="section-sub">Teste dein Englisch mit KI-generierten Aufgaben.</div>
+
+  <div id="testStart">
+    <div class="info-box" style="margin-bottom:18px;">💡 Die KI erstellt 8 Fragen passend zu deinem Niveau. Klick einfach auf die richtige Antwort. Am Ende siehst du dein Ergebnis – und Fehler werden automatisch im Fehlerlog gespeichert.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+      <button class="btn btn-primary" onclick="startTest('general')">🎯 Allgemeiner Test</button>
+      <button class="btn btn-ghost" onclick="startTest('weakness')">📋 Meine Schwächen testen</button>
+    </div>
+    <p style="font-size:0.88rem;color:var(--muted);">8 Multiple-Choice-Aufgaben · wird automatisch ausgewertet · Fehler kommen ins Fehlerlog</p>
+  </div>
+
+  <div id="testRunning" style="display:none;">
+    <div class="test-progress" id="testProgress">Frage 1 von 8</div>
+    <div id="testQuestion"></div>
+  </div>
+
+  <div id="testResult" style="display:none;">
+    <div class="test-result-card">
+      <div class="test-score" id="testResultScore"></div>
+      <div class="test-result-msg" id="testResultMsg"></div>
+      <button class="btn btn-primary" style="margin-top:20px;" onclick="document.getElementById('testResult').style.display='none';document.getElementById('testStart').style.display='block';">Neuen Test starten</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LESEN ══════════════════════════════════════════════════════════ -->
+<div class="section" id="lesen">
+  <div class="section-title">📚 Englisch lesen</div>
+  <div class="section-sub">Lies englische Texte und frag die KI auf Deutsch, wenn du etwas nicht verstehst.</div>
+
+  <!-- Modus-Auswahl -->
+  <div class="tabs-write" style="margin-bottom:20px;">
+    <button class="tab-write read-mode-btn active" data-mode="file" onclick="switchReadMode('file')">📄 Datei hochladen</button>
+    <button class="tab-write read-mode-btn" data-mode="text" onclick="switchReadMode('text')">✏️ Text eingeben</button>
+    <button class="tab-write read-mode-btn" data-mode="ki" onclick="switchReadMode('ki')">🤖 KI-Text erzeugen</button>
+  </div>
+
+  <!-- Modus 1: Datei -->
+  <div id="readModeFile">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>Tipp:</strong> Lade einen englischen Brief, Zeitungsartikel oder ein PDF hoch. Die KI erklärt dir alles auf Deutsch.</div>
+    <div class="read-zone">
+      <input type="file" accept="image/*,application/pdf" onchange="handleReadFile(event)">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📄</div>
+      <div style="font-weight:600;margin-bottom:6px;">Datei auswählen oder hierher ziehen</div>
+      <div style="font-size:0.88rem;color:var(--muted);">PDF, JPG, PNG – z.B. Brief, Zeitung, Speisekarte</div>
+    </div>
+  </div>
+
+  <!-- Modus 2: Eigener Text -->
+  <div id="readModeText" style="display:none;">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>Tipp:</strong> Kopiere einen englischen Text aus dem Internet oder einer E-Mail und füg ihn hier ein.</div>
+    <textarea class="writing-editor" id="readTextInput" style="min-height:180px;" placeholder="Englischen Text hier einfügen…&#10;&#10;Zum Beispiel: einen Artikel, eine E-Mail, eine Produktbeschreibung…"></textarea>
+    <button class="btn btn-primary" onclick="loadTextForReading()" style="margin-top:10px;">✅ Text laden &amp; fragen</button>
+  </div>
+
+  <!-- Modus 3: KI-Text -->
+  <div id="readModeKi" style="display:none;">
+    <div class="info-box" style="margin-bottom:16px;">💡 <strong>Tipp:</strong> Die KI schreibt einen kurzen englischen Text für dich – auf deinem Niveau. Danach kannst du ihn lesen und Fragen stellen.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end;">
+      <div style="flex:1;min-width:180px;">
+        <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:6px;">Thema (optional)</label>
+        <input type="text" id="readKITopic" placeholder="z.B. Urlaub in England, Beim Arzt…">
+      </div>
+      <div>
+        <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:6px;">Schwierigkeitsstufe</label>
+        <select class="form-select" id="readKILevel" style="width:auto;">
+          <option value="a1">A1 – Sehr einfach</option>
+          <option value="a2" selected>A2 – Einfach</option>
+          <option value="b1">B1 – Mittel</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="readGenerateBtn" onclick="generateReadText()">🤖 Text erstellen</button>
+    </div>
+    <div id="readKIResult"></div>
+  </div>
+
+  <!-- Aktiver Text + Fragen -->
+  <div id="readActiveArea" style="display:none;margin-top:20px;">
+    <div class="read-file-name" id="readFileName">Text geladen</div>
+    <div style="font-size:0.88rem;color:var(--muted);margin-bottom:10px;">Stell deine Frage auf Deutsch – die KI antwortet auf Deutsch.</div>
+    <div class="read-question-area">
+      <input type="text" id="readQuestion" placeholder="z.B. Was bedeutet 'nevertheless'? Was ist der Text über?" onkeydown="if(event.key==='Enter') askAboutText()">
+      <button class="btn btn-primary" id="readAskBtn" onclick="askAboutText()">Fragen →</button>
+    </div>
+    <div id="readAnswer"></div>
+  </div>
+</div>
+
+<!-- ══ NOTIZEN ══════════════════════════════════════════════════════════ -->
+<div class="section" id="notizen">
+  <div class="section-title">📝 Notizen</div>
+  <div class="section-sub">Schreib Englisch-Notizen – lass sie korrigieren.</div>
+
+  <div class="info-box" style="margin-bottom:16px;">💡 <strong>So geht's:</strong> Schreib etwas auf Englisch – ein paar Sätze reichen völlig. Klick auf "Speichern". Danach kannst du auf "Korrigieren" klicken und die KI zeigt dir die verbesserte Version.</div>
+
+  <div class="note-editor-wrap">
+    <textarea class="note-editor" id="noteEditor" placeholder="Schreib eine englische Notiz…"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="btn btn-primary" onclick="saveNote()">💾 Speichern</button>
+    </div>
+  </div>
+  <div id="notesList"></div>
+</div>
+
+<!-- ══ WÖRTER ══════════════════════════════════════════════════════════ -->
+<div class="section" id="woerter">
+  <div class="section-title">💾 Meine Wörter</div>
+  <div class="section-sub">Speichere neue englische Vokabeln. Die KI übersetzt und gibt ein Beispiel.</div>
+
+  <div class="info-box" style="margin-bottom:16px;">
+    💡 <strong>So geht's:</strong> Englisches Wort eingeben → "Übersetzen" klicken → die KI fügt die deutsche Übersetzung und ein Beispiel ein → "Speichern" klicken.
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:150px;">
+          <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:5px;">Englisches Wort oder Ausdruck</label>
+          <input type="text" id="wordEnInput" placeholder="z.B. eventually" onkeydown="if(event.key==='Enter') lookupWord()" style="width:100%;">
+        </div>
+        <div style="flex:1;min-width:150px;">
+          <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:5px;">Deutsche Bedeutung</label>
+          <input type="text" id="wordDeInput" placeholder="wird automatisch ausgefüllt…" style="width:100%;">
+        </div>
+      </div>
+      <div id="wordLookupResult" class="word-lookup-result"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="lookupWord()">🔍 Übersetzen</button>
+        <button class="btn btn-ghost" onclick="saveWord()">💾 Speichern</button>
+        <button class="btn-export" onclick="exportWordsCSV()" style="margin-left:auto;">📥 CSV Export</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wordsList"></div>
+</div>
+
+</main>
+
+<!-- ══ BOTTOM NAV ══════════════════════════════════════════════════════ -->
+<nav class="bottom-nav">
+  <div class="bottom-nav-inner">
+    <button class="bottom-nav-item active" data-tab="start" onclick="showTab('start')">
+      <span class="nav-icon">🏠</span><span class="nav-label">Start</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="chat" onclick="showTab('chat')">
+      <span class="nav-icon">💬</span><span class="nav-label">Gespräch</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="ueben" onclick="showTab('ueben')">
+      <span class="nav-icon">✍️</span><span class="nav-label">Üben</span>
+    </button>
+    <button class="bottom-nav-item" data-tab="test" onclick="showTab('test')">
+      <span class="nav-icon">🎯</span><span class="nav-label">Test</span>
+    </button>
+    <button class="bottom-nav-item" id="moreNavBtn" onclick="toggleMoreMenu()">
+      <span class="nav-icon">☰</span><span class="nav-label">Mehr</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mehr-Menü (Overlay) -->
+<div id="moreMenu" class="more-menu" style="display:none;">
+  <div class="more-menu-backdrop" onclick="toggleMoreMenu()"></div>
+  <div class="more-menu-panel">
+    <div class="more-menu-title">Weitere Bereiche</div>
+    <button class="more-menu-item" onclick="showTab('log');toggleMoreMenu()">
+      <span>📋</span><span>Fehlerlog</span>
+      <span class="bottom-nav-badge" id="bottomNavBadge" style="display:none;position:static;margin-left:auto;">0</span>
+    </button>
+    <button class="more-menu-item" onclick="showTab('wortinseln');toggleMoreMenu()">
+      <span>🗺️</span><span>Wortinseln</span>
+    </button>
+    <button class="more-menu-item" onclick="showTab('lesen');toggleMoreMenu()">
+      <span>📚</span><span>Lesen</span>
+    </button>
+    <button class="more-menu-item" onclick="showTab('notizen');toggleMoreMenu()">
+      <span>📝</span><span>Notizen</span>
+    </button>
+    <button class="more-menu-item" onclick="showTab('woerter');toggleMoreMenu()">
+      <span>💾</span><span>Meine Wörter</span>
+    </button>
+    <button class="more-menu-item" onclick="openSettings();toggleMoreMenu()">
+      <span>⚙️</span><span>Einstellungen</span>
+    </button>
+  </div>
+</div>
+
+<!-- ══ ONBOARDING Modal ══════════════════════════════════════════════════ -->
+<div class="onboarding-modal" id="onboardingModal">
+  <div class="onboarding-panel">
+    <div class="onboarding-progress">
+      <div class="onboarding-dot active" id="obDot0"></div>
+      <div class="onboarding-dot" id="obDot1"></div>
+    </div>
+
+    <!-- Schritt 1: Warum -->
+    <div class="onboarding-step active" id="obStep0">
+      <div class="onboarding-icon">🎯</div>
+      <div class="onboarding-title">Warum lernst du Englisch?</div>
+      <div class="onboarding-sub">Wähl alles aus, was auf dich zutrifft – du kannst später noch mehr hinzufügen.</div>
+      <div class="chip-group" id="motivChips">
+        <div class="chip" data-val="reisen" onclick="toggleChip(this,'motiv')">✈️ Reisen & Urlaub</div>
+        <div class="chip" data-val="enkel" onclick="toggleChip(this,'motiv')">👶 Mit Enkeln kommunizieren</div>
+        <div class="chip" data-val="medien" onclick="toggleChip(this,'motiv')">📺 Serien & Bücher verstehen</div>
+        <div class="chip" data-val="kontakte" onclick="toggleChip(this,'motiv')">🌍 Englischsprachige Freunde/Familie</div>
+        <div class="chip" data-val="beruf" onclick="toggleChip(this,'motiv')">💼 Beruf oder Ehrenamt</div>
+        <div class="chip" data-val="interesse" onclick="toggleChip(this,'motiv')">🎓 Einfach aus Freude am Lernen</div>
+      </div>
+      <div class="onboarding-btns">
+        <button class="btn btn-ghost" onclick="closeOnboarding()">Überspringen</button>
+        <button class="btn btn-primary" onclick="obNext()">Weiter →</button>
+      </div>
+    </div>
+
+    <!-- Schritt 2: Interessen -->
+    <div class="onboarding-step" id="obStep1">
+      <div class="onboarding-icon">💡</div>
+      <div class="onboarding-title">Was interessiert dich?</div>
+      <div class="onboarding-sub">Die KI passt Aufgaben, Beispiele und Gespräche an deine Interessen an.</div>
+      <div class="chip-group" id="interestChips">
+        <div class="chip" data-val="kochen" onclick="toggleChip(this,'interest')">🍳 Kochen & Rezepte</div>
+        <div class="chip" data-val="reisen" onclick="toggleChip(this,'interest')">✈️ Reisen & Tourismus</div>
+        <div class="chip" data-val="natur" onclick="toggleChip(this,'interest')">🌿 Natur & Garten</div>
+        <div class="chip" data-val="musik" onclick="toggleChip(this,'interest')">🎵 Musik & Kunst</div>
+        <div class="chip" data-val="gesundheit" onclick="toggleChip(this,'interest')">🏥 Gesundheit & Wellness</div>
+        <div class="chip" data-val="geschichte" onclick="toggleChip(this,'interest')">📖 Geschichte & Kultur</div>
+        <div class="chip" data-val="familie" onclick="toggleChip(this,'interest')">👨‍👩‍👧 Familie & Enkelkinder</div>
+        <div class="chip" data-val="sport" onclick="toggleChip(this,'interest')">⚽ Sport & Bewegung</div>
+        <div class="chip" data-val="technik" onclick="toggleChip(this,'interest')">💻 Technik & Internet</div>
+        <div class="chip" data-val="filme" onclick="toggleChip(this,'interest')">🎬 Filme & Serien</div>
+      </div>
+      <div class="onboarding-btns">
+        <button class="btn btn-ghost" onclick="obPrev()">← Zurück</button>
+        <button class="btn btn-primary" onclick="obFinish()">✅ Fertig</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TUTORIAL Modal ═══════════════════════════════════════════════════ -->
+<div class="tutorial-modal" id="tutorialModal">
+  <div class="tutorial-panel">
+    <button class="tutorial-close" onclick="closeTutorial()" title="Schließen">✕</button>
+    <div class="tutorial-icon" id="tutIcon">👋</div>
+    <div class="tutorial-title" id="tutTitle">Willkommen!</div>
+    <div class="tutorial-text" id="tutText">Laden…</div>
+    <div class="tutorial-progress" id="tutProgress">1 / 7</div>
+    <button class="btn btn-primary tutorial-action-btn" id="tutActionBtn" style="display:none;">Ausprobieren</button>
+    <div class="tutorial-btns">
+      <button class="btn btn-ghost" id="tutPrevBtn" onclick="tutorialPrev()" style="visibility:hidden;">← Zurück</button>
+      <button class="btn btn-primary" id="tutNextBtn" onclick="tutorialNext()">Weiter →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EINSTELLUNGEN Modal ══════════════════════════════════════════════ -->
+<div class="settings-modal" id="settingsModal">
+  <div class="settings-panel">
+    <button class="settings-close" onclick="closeSettings()">✕</button>
+    <h2 style="font-family:'Fraunces',serif;font-size:1.4rem;margin-bottom:20px;">⚙️ Einstellungen</h2>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Darstellung</div>
+      <div class="settings-row">
+        <span class="settings-label">Design</span>
+        <select class="form-select" id="themeSelect" style="width:160px;">
+          <option value="light">Hell</option>
+          <option value="dark">Dunkel</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Mein Niveau</span>
+        <select class="form-select" id="niveauSelect" style="width:180px;">
+          <option value="A1">A1 – Absolute Anfänger</option>
+          <option value="A2">A2 – Grundkenntnisse</option>
+          <option value="B1">B1 – Mittelstufe</option>
+          <option value="B2">B2 – Fortgeschritten</option>
+          <option value="C1">C1 – Fließend</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Lernziel</div>
+      <div class="settings-row">
+        <span class="settings-label">Tagesziel (Wörter)</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" id="dailyGoalInput" style="width:90px;" min="10" max="500" value="50">
+          <button class="btn btn-primary btn-sm" onclick="saveDailyGoal()">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Mein Profil</div>
+      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:10px;">Warum lernst du Englisch?</div>
+      <div class="chip-group" id="settingsMotivChips">
+        <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'motiv')">✈️ Reisen & Urlaub</div>
+        <div class="chip" data-val="enkel" onclick="toggleSettingsChip(this,'motiv')">👶 Mit Enkeln</div>
+        <div class="chip" data-val="medien" onclick="toggleSettingsChip(this,'motiv')">📺 Serien & Bücher</div>
+        <div class="chip" data-val="kontakte" onclick="toggleSettingsChip(this,'motiv')">🌍 Freunde/Familie</div>
+        <div class="chip" data-val="beruf" onclick="toggleSettingsChip(this,'motiv')">💼 Beruf/Ehrenamt</div>
+        <div class="chip" data-val="interesse" onclick="toggleSettingsChip(this,'motiv')">🎓 Aus Freude</div>
+      </div>
+      <div style="font-size:0.85rem;color:var(--muted);margin:14px 0 10px;">Meine Interessen</div>
+      <div class="chip-group" id="settingsInterestChips">
+        <div class="chip" data-val="kochen" onclick="toggleSettingsChip(this,'interest')">🍳 Kochen</div>
+        <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'interest')">✈️ Reisen</div>
+        <div class="chip" data-val="natur" onclick="toggleSettingsChip(this,'interest')">🌿 Natur & Garten</div>
+        <div class="chip" data-val="musik" onclick="toggleSettingsChip(this,'interest')">🎵 Musik & Kunst</div>
+        <div class="chip" data-val="gesundheit" onclick="toggleSettingsChip(this,'interest')">🏥 Gesundheit</div>
+        <div class="chip" data-val="geschichte" onclick="toggleSettingsChip(this,'interest')">📖 Geschichte</div>
+        <div class="chip" data-val="familie" onclick="toggleSettingsChip(this,'interest')">👨‍👩‍👧 Familie</div>
+        <div class="chip" data-val="sport" onclick="toggleSettingsChip(this,'interest')">⚽ Sport</div>
+        <div class="chip" data-val="technik" onclick="toggleSettingsChip(this,'interest')">💻 Technik</div>
+        <div class="chip" data-val="filme" onclick="toggleSettingsChip(this,'interest')">🎬 Filme</div>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:0.78rem;color:var(--muted);">Änderungen werden sofort gespeichert.</span>
+        <button class="btn btn-ghost btn-sm" onclick="openOnboarding();closeSettings()">Profil neu ausfüllen →</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">KI-Zugang (API-Schlüssel)</div>
+      <div style="font-size:0.88rem;color:var(--muted);line-height:1.6;margin-bottom:14px;">
+        Gib deinen eigenen Anthropic-API-Schlüssel ein, um alle KI-Funktionen zu nutzen. Den Schlüssel bekommst du unter <strong>console.anthropic.com</strong> → "Get API Key".
+      </div>
+      <div style="position:relative;margin-bottom:10px;">
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-…" style="font-family:monospace;font-size:0.88rem;letter-spacing:0.03em;padding-right:48px;">
+        <button onclick="toggleApiKeyVisibility()" title="Schlüssel anzeigen/verbergen" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1.1rem;padding:4px 6px;border-radius:6px;color:var(--muted);line-height:1;">👁</button>
+      </div>
+      <button class="btn btn-primary" onclick="saveApiKey()" style="width:100%;margin-bottom:8px;">Schlüssel speichern</button>
+      <div id="apiKeyFeedback" style="font-size:0.85rem;color:var(--green);min-height:1.4em;text-align:center;"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Cloud-Synchronisation</div>
+      <div style="margin-bottom:10px;font-size:0.9rem;" id="syncStatus">Nicht angemeldet – Daten werden nur lokal gespeichert</div>
+      <button class="btn btn-primary" id="syncLoginBtn" onclick="window.firebaseLogin&&window.firebaseLogin()">Mit Google anmelden</button>
+      <button class="btn btn-ghost" id="syncLogoutBtn" style="display:none;" onclick="window.firebaseLogout&&window.firebaseLogout()">Abmelden</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Über Headway</div>
+      <div style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin-bottom:14px;">
+        Version 1.0.0 · Englisch lernen für deutsche Sprachbegeisterte<br>
+        Powered by Claude AI · Deine Daten bleiben auf deinem Gerät
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openTutorial()">📖 Tutorial erneut anzeigen</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
