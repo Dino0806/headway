@@ -167,7 +167,7 @@ function showStreakCelebration(streak) {
 }
 
 // ── Storage ──────────────────────────────────────────────────────────
-let appSettings = { theme:'light', lang:'de', dailyGoal:50, fontSize:'normal', apiKey:'', niveau:'A1', motivations:[], interests:[] };
+let appSettings = { theme:'light', lang:'de', dailyGoal:50, fontSize:'normal', apiKey:'', niveau:'A1', motivations:[], interests:[], userName:'' };
 
 // ── Niveau-Hilfsfunktion ─────────────────────────────────────────────
 // ── Profil-Kontext für KI ────────────────────────────────────────────
@@ -212,6 +212,8 @@ function loadSettings() {
   if (goalInput) goalInput.value = appSettings.dailyGoal || 50;
   const apiInput = document.getElementById('apiKeyInput');
   if (apiInput && appSettings.apiKey) apiInput.value = appSettings.apiKey;
+  const nameInput = document.getElementById('settingsNameInput');
+  if (nameInput) nameInput.value = appSettings.userName || '';
   const niveauSelect = document.getElementById('niveauSelect');
   if (niveauSelect) niveauSelect.value = appSettings.niveau || 'A1';
   // Chips synchronisieren
@@ -387,7 +389,7 @@ function updateLevelDisplay() {
   const el = document.getElementById('levelDisplay');
   if (!el) return;
   const totalWords = window.stats.totalWords||0;
-  if (totalWords < 100) { el.textContent='Noch kein Level (schreib mehr)'; return; }
+  if (totalWords < 100) { el.textContent='Noch nicht genug Daten'; return; }
   const n = window.errorLog.length;
   const errorRate = n / Math.max(totalWords/100,1);
   let score = Math.min(100, Math.round((totalWords/20) - (errorRate*5)));
@@ -502,41 +504,89 @@ const allChallenges = [
 
 // ── Tägliche Tipps ───────────────────────────────────────────────────
 const allTips = [
+  // Grammatik
   { cat:'Grammatik', text:'"A" oder "an"? Entscheidend ist der KLANG: "an umbrella" (Vokal), "a university" (klingt wie "ju" = Konsonant).' },
-  { cat:'Falsche Freunde', text:'"Become" ≠ bekommen! "I become happy" = Ich werde glücklich. "I get/receive" = ich bekomme.' },
-  { cat:'Aussprache', text:'Das englische "th" – leg die Zunge leicht zwischen die Zähne: "think", "the", "this".' },
-  { cat:'Tipp', text:'"Please" und "thank you" sehr häufig verwenden – in England ist das besonders wichtig!' },
-  { cat:'Grammatik', text:'Present Simple für Gewohnheiten: "I drink coffee every morning." – Nicht die Verlaufsform.' },
-  { cat:'Falsche Freunde', text:'"Actually" ≠ aktuell! "Actually" bedeutet "eigentlich". "Currently" = aktuell/zurzeit.' },
-  { cat:'Redewendung', text:'"How do you do?" ist sehr formell. Besser im Alltag: "How are you?" oder "How\'s it going?"' },
+  { cat:'Grammatik', text:'Present Simple für Gewohnheiten: "I drink coffee every morning." – kein "am drinking" für Routinen.' },
   { cat:'Grammatik', text:'Vergangenheit: "I went" (unregelmäßig), "I walked" (regelmäßig). Kein "have" bei eindeutiger Vergangenheit.' },
-  { cat:'Aussprache', text:'"Would you" klingt oft wie "Wudjuh" – sprich flüssig, nicht jedes Wort einzeln.' },
-  { cat:'Falsche Freunde', text:'"Chef" im Englischen = Küchenchef. Dein Vorgesetzter ist "boss" oder "manager".' },
-  { cat:'Tipp', text:'Kein Artikel vor Mahlzeiten: "I had breakfast" – nicht "a breakfast".' },
   { cat:'Grammatik', text:'Modal + Infinitiv (ohne "to"): "I can swim." "You should go." – kein zweites "s"!' },
-  { cat:'Redewendung', text:'"Excuse me" – um jemanden anzusprechen. "Sorry" – wenn man einen Fehler gemacht hat.' },
-  { cat:'Falsche Freunde', text:'"Gift" im Englischen = Geschenk (nicht Gift!). Poison = Gift auf Deutsch.' },
   { cat:'Grammatik', text:'Fragen bilden: Verb vor Subjekt – "Are you tired?" Oder mit Hilfsverb: "Do you like tea?"' },
-  { cat:'Kultur', text:'In England bezahlt man in Restaurants oft getrennt ("separate bills"). Frag einfach: "Could we pay separately?"' },
-  { cat:'Aussprache', text:'"Colonel" klingt wie "kernel". Englisch und Schreibung stimmen oft nicht überein!' },
-  { cat:'Tipp', text:'Sag einfach "I\'m sorry, could you repeat that more slowly, please?" – jeder wird das gerne tun!' },
   { cat:'Grammatik', text:'Present Perfect: "I have been to London." – Erfahrung, ohne genauen Zeitpunkt.' },
-  { cat:'Falsche Freunde', text:'"Sensible" ≠ sensibel! "Sensible" = vernünftig. "Sensitive" = sensibel/empfindlich.' },
-  { cat:'Redewendung', text:'"Not bad at all" ist ein echtes Lob! Briten drücken Begeisterung oft zurückhaltend aus.' },
   { cat:'Grammatik', text:'"Going to" für geplante Vorhaben: "I\'m going to visit my grandchildren next week."' },
-  { cat:'Aussprache', text:'"Comfortable" – viele Engländer sagen "COMF-ta-ble" (3 Silben), nicht 4.' },
-  { cat:'Falsche Freunde', text:'"Handy" ist kein englisches Wort für Mobiltelefon! Sag "mobile" (UK) oder "cell phone" (US).' },
-  { cat:'Tipp', text:'Lern feste Phrasen auswendig: "Could I have...", "Where is...", "How much is..."' },
-  { cat:'Grammatik', text:'Zählbar vs. unkontierbar: "much water" aber "many glasses of water". "Less" vs. "fewer".' },
-  { cat:'Kultur', text:'In englischen Gesprächen ist es normal, über das Wetter zu sprechen. Guter Einstieg!' },
-  { cat:'Aussprache', text:'"Queue" (Warteschlange) klingt einfach wie "Q". Britisches Wort – sehr nützlich!' },
+  { cat:'Grammatik', text:'Zählbar vs. unzählbar: "much water" aber "many glasses of water". "Less" vs. "fewer".' },
   { cat:'Grammatik', text:'Verneinung: "I don\'t know." "She doesn\'t like it." – das Verb bleibt im Infinitiv.' },
-  { cat:'Tipp', text:'Schreib 3 neue Wörter pro Tag auf einen Zettel und schau ihn morgens an.' },
-  { cat:'Redewendung', text:'"Would you mind...?" ist sehr höflich: "Would you mind opening the window?"' },
-  { cat:'Falsche Freunde', text:'"Eventual" ≠ eventuell! "Eventual" = schließlich/letztendlich. "Possibly" = eventuell.' },
   { cat:'Grammatik', text:'Adjektive ändern sich im Englischen nicht: "a tall man", "tall women" – kein -e, -er, -en!' },
+  { cat:'Grammatik', text:'"Will" für spontane Entscheidungen: "I\'ll have the soup, please." – entschieden in diesem Moment.' },
+  { cat:'Grammatik', text:'Plural: meist einfach +s. Ausnahmen: "child → children", "person → people", "tooth → teeth".' },
+  { cat:'Grammatik', text:'"There is" (Einzahl) vs. "There are" (Mehrzahl): "There is a cat. There are two cats."' },
+  { cat:'Grammatik', text:'Possessiv: "my, your, his, her, its, our, their" – kein Genitiv-s wie im Deutschen.' },
+  { cat:'Grammatik', text:'"Some" in positiven Sätzen, "any" in Fragen und Verneinungen: "I have some tea. Do you have any milk?"' },
+  { cat:'Grammatik', text:'Komparativ: +er bei kurzen Adjektiven ("taller"), "more" bei langen ("more comfortable").' },
+  { cat:'Grammatik', text:'"Used to" für vergangene Gewohnheiten: "I used to live in Munich." – tue ich heute nicht mehr.' },
+  { cat:'Grammatik', text:'Konditionalsatz Typ 1: "If it rains, I\'ll stay home." – reale Möglichkeit in der Zukunft.' },
+  // Redewendungen
+  { cat:'Redewendung', text:'"How do you do?" ist sehr formell. Besser im Alltag: "How are you?" oder "How\'s it going?"' },
+  { cat:'Redewendung', text:'"Excuse me" – um jemanden anzusprechen. "Sorry" – wenn man einen Fehler gemacht hat.' },
+  { cat:'Redewendung', text:'"Not bad at all" ist ein echtes Lob! Briten drücken Begeisterung oft zurückhaltend aus.' },
+  { cat:'Redewendung', text:'"Would you mind...?" ist sehr höflich: "Would you mind opening the window?"' },
+  { cat:'Redewendung', text:'"I\'m afraid..." leitet höflich schlechte Neuigkeiten ein: "I\'m afraid we\'re fully booked."' },
+  { cat:'Redewendung', text:'"Fancy" kann "mögen" bedeuten: "Do you fancy a cup of tea?" – typisch britisch!' },
+  { cat:'Redewendung', text:'"It\'s on the tip of my tongue" – das Wort liegt mir auf der Zunge. Sehr nützlich beim Lernen!' },
+  { cat:'Redewendung', text:'"Could you say that again?" oder "Pardon?" – höflich nachfragen, wenn man etwas nicht versteht.' },
+  { cat:'Redewendung', text:'"Take your time" – immer beruhigend, wenn jemand etwas sucht oder überlegt.' },
+  { cat:'Redewendung', text:'"What a lovely day!" – Briten kommentieren gern das Wetter, auch als Gesprächseinstieg.' },
+  { cat:'Redewendung', text:'"Better late than never" – besser spät als nie. Perfekt als Entschuldigung für Verspätungen.' },
+  { cat:'Redewendung', text:'"Once in a blue moon" – sehr selten. "We visit them once in a blue moon."' },
+  { cat:'Redewendung', text:'"Break a leg!" – Viel Erfolg! (vor einer Prüfung oder Aufführung, nie "Good luck" auf der Bühne!)' },
+  { cat:'Redewendung', text:'"It\'s a piece of cake" – ein Kinderspiel, sehr einfach. "The test was a piece of cake!"' },
+  { cat:'Redewendung', text:'"Under the weather" – sich nicht gut fühlen: "I\'m feeling a bit under the weather today."' },
+  // Falsche Freunde
+  { cat:'Falsche Freunde', text:'"Become" ≠ bekommen! "I become happy" = Ich werde glücklich. "I get/receive" = ich bekomme.' },
+  { cat:'Falsche Freunde', text:'"Actually" ≠ aktuell! "Actually" bedeutet "eigentlich". "Currently" = aktuell/zurzeit.' },
+  { cat:'Falsche Freunde', text:'"Chef" im Englischen = Küchenchef. Dein Vorgesetzter ist "boss" oder "manager".' },
+  { cat:'Falsche Freunde', text:'"Gift" im Englischen = Geschenk (nicht Gift!). Poison = Gift auf Deutsch.' },
+  { cat:'Falsche Freunde', text:'"Sensible" ≠ sensibel! "Sensible" = vernünftig. "Sensitive" = sensibel/empfindlich.' },
+  { cat:'Falsche Freunde', text:'"Handy" ist kein englisches Wort für Mobiltelefon! Sag "mobile" (UK) oder "cell phone" (US).' },
+  { cat:'Falsche Freunde', text:'"Eventual" ≠ eventuell! "Eventual" = schließlich/letztendlich. "Possibly" = eventuell.' },
+  { cat:'Falsche Freunde', text:'"Sympathetic" ≠ sympathisch! Es bedeutet "mitfühlend". "Likeable/nice" = sympathisch.' },
+  { cat:'Falsche Freunde', text:'"Gymnasium" im Englischen = Sporthalle, nicht Schule! "Grammar school" = Gymnasium.' },
+  { cat:'Falsche Freunde', text:'"Fabric" ≠ Fabrik! "Fabric" = Stoff/Gewebe. "Factory" = Fabrik.' },
+  { cat:'Falsche Freunde', text:'"Ordinary" ≠ ordentlich! "Ordinary" = gewöhnlich/normal. "Tidy/neat" = ordentlich.' },
+  { cat:'Falsche Freunde', text:'"Preservative" ≠ Präservativ! Es bedeutet "Konservierungsmittel". Vorsicht bei Gesprächen!' },
+  { cat:'Falsche Freunde', text:'"Genial" ≠ genial! Im Englischen bedeutet es "freundlich/herzlich". "Brilliant" = genial.' },
+  // Aussprache
+  { cat:'Aussprache', text:'Das englische "th" – leg die Zunge leicht zwischen die Zähne: "think", "the", "this".' },
+  { cat:'Aussprache', text:'"Would you" klingt oft wie "Wudjuh" – sprich flüssig, nicht jedes Wort einzeln.' },
+  { cat:'Aussprache', text:'"Colonel" klingt wie "kernel". Englisch und Schreibung stimmen oft nicht überein!' },
+  { cat:'Aussprache', text:'"Comfortable" – viele Engländer sagen "COMF-ta-ble" (3 Silben), nicht 4.' },
   { cat:'Aussprache', text:'"Worcestershire" – die meisten Engländer sagen einfach "WOOSTER sauce". Mach dir keine Sorgen!' },
+  { cat:'Aussprache', text:'"Queue" (Warteschlange) klingt einfach wie "Q". Britisches Wort – sehr nützlich!' },
+  { cat:'Aussprache', text:'"Thought", "through", "though", "tough" – alle mit "ough", aber alle anders ausgesprochen!' },
+  { cat:'Aussprache', text:'"Debt" – das "b" wird nicht ausgesprochen. Einfach "det" sagen.' },
+  { cat:'Aussprache', text:'Betonung macht den Unterschied: "REcord" (Nomen) vs. "reCORD" (Verb). Gleiches Wort, andere Bedeutung!' },
+  { cat:'Aussprache', text:'"Wednesday" spricht man "Wensday" aus – das erste "d" ist stumm.' },
+  { cat:'Aussprache', text:'Das "r" am Wortende wird im britischen Englisch meist nicht gesprochen: "butter" = "butta".' },
+  // Kultur
+  { cat:'Kultur', text:'In England bezahlt man in Restaurants oft getrennt ("separate bills"). Frag einfach: "Could we pay separately?"' },
+  { cat:'Kultur', text:'In englischen Gesprächen ist es normal, über das Wetter zu sprechen. Guter Einstieg!' },
+  { cat:'Kultur', text:'"Please" und "thank you" sehr häufig verwenden – in England ist das besonders wichtig!' },
+  { cat:'Kultur', text:'In Großbritannien fährt man links! Beim Überqueren der Straße also zuerst nach rechts schauen.' },
+  { cat:'Kultur', text:'Briten stehen sehr auf Schlangen (queuing). Nie vordrängeln – das gilt als sehr unhöflich!' },
+  { cat:'Kultur', text:'"Cheers!" kann in England sowohl "Prost!" als auch "Danke!" bedeuten.' },
+  { cat:'Kultur', text:'In britischen Supermärkten heißt die Kasse "checkout" und der Einkaufswagen "trolley".' },
+  { cat:'Kultur', text:'Trinkgeld ("tip") ist in britischen Restaurants üblich – ca. 10–15% wenn kein Service Charge berechnet wird.' },
+  // Lerntipps
+  { cat:'Tipp', text:'Kein Artikel vor Mahlzeiten: "I had breakfast" – nicht "a breakfast".' },
+  { cat:'Tipp', text:'Sag einfach "I\'m sorry, could you repeat that more slowly, please?" – jeder wird das gerne tun!' },
+  { cat:'Tipp', text:'Lern feste Phrasen auswendig: "Could I have...", "Where is...", "How much is..."' },
+  { cat:'Tipp', text:'Schreib 3 neue Wörter pro Tag auf einen Zettel und schau ihn morgens an.' },
   { cat:'Tipp', text:'Englische Filme mit deutschen Untertiteln schauen – sehr effektiv zum Hören üben.' },
+  { cat:'Tipp', text:'Stell dein Telefon oder Tablet auf Englisch um – so siehst du täglich neue Wörter ganz nebenbei.' },
+  { cat:'Tipp', text:'Sing englische Lieder mit – Melodie hilft beim Merken von Wörtern und Satzstrukturen.' },
+  { cat:'Tipp', text:'Lies englische Kinderbücher – einfache Sprache, klare Sätze, perfekt zum Wiederholen.' },
+  { cat:'Tipp', text:'Denk laut auf Englisch – beschreibe was du gerade tust: "Now I\'m making tea."' },
+  { cat:'Tipp', text:'Fehler sind kein Problem – jeder macht sie! Wichtig ist, dass man weitermacht und daraus lernt.' },
+  { cat:'Tipp', text:'Auch 10 Minuten täglich bringen mehr als eine lange Einheit einmal pro Woche.' },
+  { cat:'Tipp', text:'Schau englische Kochvideos auf YouTube – Bilder helfen beim Verstehen, auch ohne jedes Wort zu kennen.' },
 ];
 
 // ── Personas ─────────────────────────────────────────────────────────
@@ -1658,6 +1708,8 @@ function openOnboarding() {
   obCurrentStep = 0;
   showObStep(0);
   syncOnboardingChips();
+  const nameInput = document.getElementById('obNameInput');
+  if (nameInput) nameInput.value = appSettings.userName || '';
   document.getElementById('onboardingModal').style.display = 'flex';
 }
 function closeOnboarding() {
@@ -1665,6 +1717,15 @@ function closeOnboarding() {
   localStorage.setItem('headway_onboardingDone', '1');
 }
 function obNext() {
+  // Name aus Schritt 0 speichern
+  const nameInput = document.getElementById('obNameInput');
+  if (nameInput) {
+    appSettings.userName = nameInput.value.trim();
+    const si = document.getElementById('settingsNameInput');
+    if (si) si.value = appSettings.userName;
+    saveSettings();
+    renderHome();
+  }
   obCurrentStep = 1;
   showObStep(1);
 }
@@ -1708,6 +1769,23 @@ function toggleSettingsChip(el, type) {
   saveSettings();
   syncOnboardingChips();
 }
+function toggleProfileSection() {
+  const body = document.getElementById('profileSectionBody');
+  const icon = document.getElementById('profileToggleIcon');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (icon) icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+function toggleSubSection(bodyId, iconId) {
+  const body = document.getElementById(bodyId);
+  const icon = document.getElementById(iconId);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (icon) icon.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
 function syncOnboardingChips() {
   document.querySelectorAll('#motivChips .chip').forEach(c=>{
     c.classList.toggle('selected', (appSettings.motivations||[]).includes(c.dataset.val));
@@ -1734,7 +1812,19 @@ function getDailyTip() {
   const d=new Date(); const idx=(d.getFullYear()*400+d.getMonth()*31+d.getDate()*3+1)%allTips.length;
   return allTips[idx];
 }
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 11) return 'Guten Morgen';
+  if (h < 17) return 'Guten Tag';
+  return 'Guten Abend';
+}
 function renderHome() {
+  // Begrüßung
+  const greetEl = document.getElementById('homeGreeting');
+  if (greetEl) {
+    const name = (appSettings && appSettings.userName) ? `, ${appSettings.userName}` : '';
+    greetEl.textContent = `${getGreeting()}${name}! 👋`;
+  }
   const ch=getDailyChallenge();
   const el=document.getElementById('challengeTitle'); if(el) el.textContent=ch.title;
   const el2=document.getElementById('challengeDesc'); if(el2) el2.textContent=ch.desc;

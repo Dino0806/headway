@@ -650,35 +650,29 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
 <div class="section active" id="start">
 
   <!-- Anfänger-Guide (nur A1/A2) -->
-  <div id="beginnerGuide" style="display:none;margin-bottom:20px;">
-    <div class="card" style="border-left:4px solid var(--blue);padding-left:20px;">
-      <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Dein Einstieg als Anfänger</div>
-      <p style="font-size:0.93rem;line-height:1.65;margin-bottom:14px;">Noch wenig Englisch? Kein Problem – hier ist ein guter Weg zum Anfangen:</p>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="btn btn-primary btn-sm" onclick="showTab('wortinseln')">1. Wortinsel anlegen – z.B. "Begrüßungen" oder "Im Café" →</button>
-        <button class="btn btn-ghost btn-sm" onclick="showTab('ueben');switchWriteMode('luecken',document.querySelector('[onclick*=luecken]'))">2. Lückenübungen – einfach auf das richtige Wort klicken →</button>
-        <button class="btn btn-ghost btn-sm" onclick="showTab('chat')">3. Erstes Gespräch mit Emma – schreib einfach drauflos →</button>
+  <div id="beginnerGuide" style="display:none;margin-bottom:16px;">
+    <div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:12px 16px;display:flex;align-items:flex-start;gap:10px;">
+      <span style="font-size:1rem;flex-shrink:0;margin-top:1px;">💡</span>
+      <div style="font-size:0.85rem;line-height:1.6;color:var(--white);">
+        Für den Einstieg empfehlen wir:
+        <a href="#" onclick="showTab('wortinseln');return false;" style="color:var(--blue);text-decoration:none;font-weight:600;">Wortinseln</a>
+        zum Vokabeln lernen,
+        <a href="#" onclick="showTab('ueben');switchWriteMode('luecken',document.querySelector('[onclick*=luecken]'));return false;" style="color:var(--blue);text-decoration:none;font-weight:600;">Lückenübungen</a>
+        zum Üben oder ein
+        <a href="#" onclick="showTab('chat');return false;" style="color:var(--blue);text-decoration:none;font-weight:600;">Gespräch mit Emma</a>
+        für erste Konversation.
       </div>
-      <p style="font-size:0.8rem;color:var(--muted);margin-top:12px;">Tipp: Du kannst dein Niveau jederzeit in den Einstellungen ändern – die KI passt sich automatisch an.</p>
     </div>
   </div>
 
-  <div class="challenge-card">
-    <div class="challenge-label">Heutige Aufgabe</div>
-    <div class="challenge-icon" id="challengeIcon">✍️</div>
-    <div class="challenge-title" id="challengeTitle">Laden…</div>
-    <div class="challenge-desc" id="challengeDesc">Bitte warten.</div>
-    <button class="btn btn-primary" id="useChallengeBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);">
-      ✍️ Jetzt schreiben
-    </button>
+  <!-- Begrüßung -->
+  <div style="margin-bottom:20px;">
+    <div style="font-family:'Fraunces',serif;font-size:1.6rem;font-weight:700;color:var(--white);" id="homeGreeting">Guten Tag! 👋</div>
+    <div style="font-size:0.9rem;color:var(--muted);margin-top:4px;">Schön, dass du heute lernst.</div>
   </div>
 
-  <div class="tip-card">
-    <div class="tip-cat" id="tipCat">Tipp</div>
-    <div class="tip-text" id="tipText">Lädt…</div>
-  </div>
-
-  <div class="stats-grid">
+  <!-- Aktivität -->
+  <div class="stats-grid" style="margin-bottom:12px;">
     <div class="stat-card">
       <div class="stat-number" id="statDailyWords">0</div>
       <div class="stat-label" id="statDailyLabel">Wörter heute</div>
@@ -697,9 +691,24 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     </div>
   </div>
 
-  <div style="margin-bottom:20px;">
-    <div style="font-size:0.78rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Aktivität (letzte 7 Tage)</div>
+  <div style="margin-bottom:24px;">
+    <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Letzte 7 Tage</div>
     <div class="activity-chart" id="activityChart"></div>
+  </div>
+
+  <div class="challenge-card">
+    <div class="challenge-label">Heutige Aufgabe</div>
+    <div class="challenge-icon" id="challengeIcon">✍️</div>
+    <div class="challenge-title" id="challengeTitle">Laden…</div>
+    <div class="challenge-desc" id="challengeDesc">Bitte warten.</div>
+    <button class="btn btn-primary" id="useChallengeBtn" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);">
+      ✍️ Jetzt schreiben
+    </button>
+  </div>
+
+  <div class="tip-card">
+    <div class="tip-cat" id="tipCat">Tipp</div>
+    <div class="tip-text" id="tipText">Lädt…</div>
   </div>
 
   <div style="margin-bottom:20px;">
@@ -707,7 +716,7 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     <div id="swWidget"></div>
   </div>
 
-  <div class="level-badge">Ihr Niveau: <span id="levelDisplay">–</span></div>
+  <div class="level-badge">Dein Niveau: <span id="levelDisplay">–</span></div>
 </div>
 
 <!-- ══ CHAT ══════════════════════════════════════════════════════════ -->
@@ -1139,11 +1148,14 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
       <div class="onboarding-dot" id="obDot1"></div>
     </div>
 
-    <!-- Schritt 1: Warum -->
+    <!-- Schritt 1: Name + Warum -->
     <div class="onboarding-step active" id="obStep0">
-      <div class="onboarding-icon">🎯</div>
-      <div class="onboarding-title">Warum lernst du Englisch?</div>
-      <div class="onboarding-sub">Wähl alles aus, was auf dich zutrifft – du kannst später noch mehr hinzufügen.</div>
+      <div class="onboarding-icon">👋</div>
+      <div class="onboarding-title">Schön, dass du dabei bist!</div>
+      <div class="onboarding-sub">Wie heißt du? (optional – nur für die persönliche Begrüßung)</div>
+      <input type="text" id="obNameInput" placeholder="Dein Vorname…" style="margin-bottom:20px;" maxlength="30">
+      <div style="font-weight:600;font-size:0.95rem;margin-bottom:8px;color:var(--white);">Warum lernst du Englisch?</div>
+      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:12px;">Wähl alles aus, was auf dich zutrifft.</div>
       <div class="chip-group" id="motivChips">
         <div class="chip" data-val="reisen" onclick="toggleChip(this,'motiv')">✈️ Reisen & Urlaub</div>
         <div class="chip" data-val="enkel" onclick="toggleChip(this,'motiv')">👶 Mit Enkeln kommunizieren</div>
@@ -1238,32 +1250,52 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     </div>
 
     <div class="settings-section">
-      <div class="settings-section-title">Mein Profil</div>
-      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:10px;">Warum lernst du Englisch?</div>
-      <div class="chip-group" id="settingsMotivChips">
-        <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'motiv')">✈️ Reisen & Urlaub</div>
-        <div class="chip" data-val="enkel" onclick="toggleSettingsChip(this,'motiv')">👶 Mit Enkeln</div>
-        <div class="chip" data-val="medien" onclick="toggleSettingsChip(this,'motiv')">📺 Serien & Bücher</div>
-        <div class="chip" data-val="kontakte" onclick="toggleSettingsChip(this,'motiv')">🌍 Freunde/Familie</div>
-        <div class="chip" data-val="beruf" onclick="toggleSettingsChip(this,'motiv')">💼 Beruf/Ehrenamt</div>
-        <div class="chip" data-val="interesse" onclick="toggleSettingsChip(this,'motiv')">🎓 Aus Freude</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;" onclick="toggleProfileSection()">
+        <div class="settings-section-title" style="margin-bottom:0;">Mein Profil</div>
+        <span id="profileToggleIcon" style="font-size:0.85rem;color:var(--muted);transition:transform 0.2s;">▼</span>
       </div>
-      <div style="font-size:0.85rem;color:var(--muted);margin:14px 0 10px;">Meine Interessen</div>
-      <div class="chip-group" id="settingsInterestChips">
-        <div class="chip" data-val="kochen" onclick="toggleSettingsChip(this,'interest')">🍳 Kochen</div>
-        <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'interest')">✈️ Reisen</div>
-        <div class="chip" data-val="natur" onclick="toggleSettingsChip(this,'interest')">🌿 Natur & Garten</div>
-        <div class="chip" data-val="musik" onclick="toggleSettingsChip(this,'interest')">🎵 Musik & Kunst</div>
-        <div class="chip" data-val="gesundheit" onclick="toggleSettingsChip(this,'interest')">🏥 Gesundheit</div>
-        <div class="chip" data-val="geschichte" onclick="toggleSettingsChip(this,'interest')">📖 Geschichte</div>
-        <div class="chip" data-val="familie" onclick="toggleSettingsChip(this,'interest')">👨‍👩‍👧 Familie</div>
-        <div class="chip" data-val="sport" onclick="toggleSettingsChip(this,'interest')">⚽ Sport</div>
-        <div class="chip" data-val="technik" onclick="toggleSettingsChip(this,'interest')">💻 Technik</div>
-        <div class="chip" data-val="filme" onclick="toggleSettingsChip(this,'interest')">🎬 Filme</div>
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <span style="font-size:0.78rem;color:var(--muted);">Änderungen werden sofort gespeichert.</span>
-        <button class="btn btn-ghost btn-sm" onclick="openOnboarding();closeSettings()">Profil neu ausfüllen →</button>
+
+      <div id="profileSectionBody" style="margin-top:12px;">
+        <div class="settings-row">
+          <span class="settings-label">Dein Vorname</span>
+          <input type="text" id="settingsNameInput" placeholder="Vorname…" style="width:180px;" maxlength="30" oninput="appSettings.userName=this.value.trim();saveSettings();renderHome();">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin:12px 0 0;" onclick="toggleSubSection('motivSection','motivToggleIcon')">
+          <div style="font-size:0.85rem;font-weight:600;color:var(--white);">Warum lernst du Englisch?</div>
+          <span id="motivToggleIcon" style="font-size:0.75rem;color:var(--muted);transition:transform 0.2s;transform:rotate(-90deg);">▼</span>
+        </div>
+        <div id="motivSection" style="display:none;margin-top:8px;">
+          <div class="chip-group" id="settingsMotivChips">
+            <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'motiv')">✈️ Reisen & Urlaub</div>
+            <div class="chip" data-val="enkel" onclick="toggleSettingsChip(this,'motiv')">👶 Mit Enkeln</div>
+            <div class="chip" data-val="medien" onclick="toggleSettingsChip(this,'motiv')">📺 Serien & Bücher</div>
+            <div class="chip" data-val="kontakte" onclick="toggleSettingsChip(this,'motiv')">🌍 Freunde/Familie</div>
+            <div class="chip" data-val="beruf" onclick="toggleSettingsChip(this,'motiv')">💼 Beruf/Ehrenamt</div>
+            <div class="chip" data-val="interesse" onclick="toggleSettingsChip(this,'motiv')">🎓 Aus Freude</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin:12px 0 0;" onclick="toggleSubSection('interestSection','interestToggleIcon')">
+          <div style="font-size:0.85rem;font-weight:600;color:var(--white);">Meine Interessen</div>
+          <span id="interestToggleIcon" style="font-size:0.75rem;color:var(--muted);transition:transform 0.2s;transform:rotate(-90deg);">▼</span>
+        </div>
+        <div id="interestSection" style="display:none;margin-top:8px;">
+          <div class="chip-group" id="settingsInterestChips">
+            <div class="chip" data-val="kochen" onclick="toggleSettingsChip(this,'interest')">🍳 Kochen</div>
+            <div class="chip" data-val="reisen" onclick="toggleSettingsChip(this,'interest')">✈️ Reisen</div>
+            <div class="chip" data-val="natur" onclick="toggleSettingsChip(this,'interest')">🌿 Natur & Garten</div>
+            <div class="chip" data-val="musik" onclick="toggleSettingsChip(this,'interest')">🎵 Musik & Kunst</div>
+            <div class="chip" data-val="gesundheit" onclick="toggleSettingsChip(this,'interest')">🏥 Gesundheit</div>
+            <div class="chip" data-val="geschichte" onclick="toggleSettingsChip(this,'interest')">📖 Geschichte</div>
+            <div class="chip" data-val="familie" onclick="toggleSettingsChip(this,'interest')">👨‍👩‍👧 Familie</div>
+            <div class="chip" data-val="sport" onclick="toggleSettingsChip(this,'interest')">⚽ Sport</div>
+            <div class="chip" data-val="technik" onclick="toggleSettingsChip(this,'interest')">💻 Technik</div>
+            <div class="chip" data-val="filme" onclick="toggleSettingsChip(this,'interest')">🎬 Filme</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;align-items:center;justify-content:flex-end;">
+          <button class="btn btn-ghost btn-sm" onclick="openOnboarding();closeSettings()">Profil neu ausfüllen →</button>
+        </div>
       </div>
     </div>
 
