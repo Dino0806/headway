@@ -11,7 +11,8 @@ const API_URL     = '/api/claude';
 const DAILY_LIMIT = 50;
 const ADMIN_PASS  = 'englisch2025';
 const APP_VERSION = '1.0.0';
-const MODEL       = 'claude-sonnet-4-20250514';
+const MODEL       = 'claude-sonnet-4-6';
+const MODEL_HAIKU = 'claude-haiku-4-5-20251001';
 
 // API-Key aus localStorage lesen (User-eigener Key)
 function getUserApiKey() {
@@ -317,6 +318,7 @@ function showTab(id) {
   if (id==='wortinseln') renderInselList();
   if (id==='log')        renderErrors();
   if (id==='woerter')    renderWordsList();
+  if (id==='lernpfad')   lpInit();
 }
 
 // ── UI Update ────────────────────────────────────────────────────────
@@ -607,7 +609,7 @@ const personas = {
 function selectPersona(p) {
   currentPersona = p;
   chatHistory = [];
-  ['Emma','James','Frei'].forEach(name=>{
+  ['Emma','James','Frei','Doc'].forEach(name=>{
     const btn=document.getElementById('persona'+name);
     if (!btn) return;
     const key = name.toLowerCase()==='frei'?'free':name.toLowerCase();
@@ -615,6 +617,7 @@ function selectPersona(p) {
     btn.style.borderColor=p===key?'var(--blue)':'rgba(255,255,255,0.1)';
   });
   document.getElementById('freePersonaBox').style.display='none';
+  document.getElementById('docPersonaBox').style.display='none';
   const persona=personas[p]||personas.emma;
   document.getElementById('chatAvatar').textContent=persona.icon;
   document.getElementById('chatName').textContent=persona.name;
@@ -623,10 +626,11 @@ function selectPersona(p) {
     `<div class="message ai"><div class="avatar">${persona.icon}</div><div><div class="message-bubble">${persona.greeting}</div></div></div>`;
 }
 function openFreePersona() {
-  ['Emma','James','Frei'].forEach(name=>{
+  ['Emma','James','Frei','Doc'].forEach(name=>{
     const btn=document.getElementById('persona'+name);
     if(btn){ btn.style.background=name==='Frei'?'rgba(27,94,166,0.12)':'rgba(255,255,255,0.04)'; btn.style.borderColor=name==='Frei'?'var(--blue)':'rgba(255,255,255,0.1)'; }
   });
+  document.getElementById('docPersonaBox').style.display='none';
   document.getElementById('freePersonaBox').style.display='block';
   document.getElementById('freePersonaInput').focus();
 }
@@ -643,6 +647,88 @@ function startFreePersona() {
   document.getElementById('freePersonaInput').value='';
   selectPersona('free');
 }
+// ── Document Persona ─────────────────────────────────────────────────
+let hwDocPersonaFile = null;
+let hwDocPersonaFetchedText = '';
+
+function openDocPersona() {
+  ['Emma','James','Frei','Doc'].forEach(name=>{
+    const btn=document.getElementById('persona'+name);
+    if(btn){ btn.style.background=name==='Doc'?'rgba(27,94,166,0.12)':'rgba(255,255,255,0.04)'; btn.style.borderColor=name==='Doc'?'var(--blue)':'rgba(255,255,255,0.1)'; }
+  });
+  document.getElementById('freePersonaBox').style.display='none';
+  document.getElementById('docPersonaBox').style.display='block';
+  document.getElementById('docPersonaUrl').focus();
+}
+async function fetchDocUrl() {
+  const url = document.getElementById('docPersonaUrl').value.trim();
+  if(!url) return;
+  const btn = document.querySelector('#docPersonaBox .btn-ghost');
+  btn.textContent='Loading…'; btn.disabled=true;
+  try {
+    const resp = await fetch('https://api.allorigins.win/get?url='+encodeURIComponent(url));
+    const data = await resp.json();
+    let text = data.contents||'';
+    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi,'')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi,'')
+               .replace(/<[^>]+>/g,' ')
+               .replace(/\s{2,}/g,' ').trim();
+    if(text.length>6000) text=text.slice(0,6000)+'…';
+    document.getElementById('docPersonaText').value=text;
+  } catch(e) {
+    alert('Could not fetch URL. Please paste the text manually.');
+  }
+  btn.textContent='Fetch'; btn.disabled=false;
+}
+function handleDocPersonaFile(input) {
+  const file=input.files[0]; if(!file) return; input.value='';
+  document.getElementById('docPersonaFileName').textContent=file.name;
+  document.getElementById('docPersonaRemoveBtn').style.display='inline-block';
+  if(file.type==='text/plain') {
+    const reader=new FileReader();
+    reader.onload=e=>{ hwDocPersonaFetchedText=e.target.result.slice(0,6000); hwDocPersonaFile=null; };
+    reader.readAsText(file);
+  } else {
+    const reader=new FileReader();
+    reader.onload=e=>{ hwDocPersonaFile={base64:e.target.result.split(',')[1],mediaType:file.type,name:file.name}; hwDocPersonaFetchedText=''; };
+    reader.readAsDataURL(file);
+  }
+}
+function removeDocPersonaFile() {
+  hwDocPersonaFile=null; hwDocPersonaFetchedText='';
+  document.getElementById('docPersonaFileName').textContent='';
+  document.getElementById('docPersonaRemoveBtn').style.display='none';
+}
+function startDocPersona() {
+  const pastedText = document.getElementById('docPersonaText').value.trim();
+  const textContent = hwDocPersonaFetchedText || pastedText;
+  if(!textContent && !hwDocPersonaFile){ alert('Please provide a URL, text, or file first.'); return; }
+  const niveau = (appSettings&&appSettings.niveau)||'A1';
+  const sysPrompt = `You are a friendly English tutor helping a German adult understand and discuss a text or document. Adapt your language to level ${niveau}. Keep messages short and encouraging. Start by briefly introducing what the document is about (2-3 sentences in simple English with German hints if needed). Then ask ONE open question. After each message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]`;
+  currentPersona='doc';
+  personas['doc']={ icon:'📄', name:'Document Chat', role:'Discuss a text · English', system:sysPrompt, greeting:'' };
+  document.getElementById('docPersonaBox').style.display='none';
+  document.getElementById('docPersonaText').value='';
+  document.getElementById('docPersonaUrl').value='';
+  removeDocPersonaFile();
+  document.getElementById('chatAvatar').textContent='📄';
+  document.getElementById('chatName').textContent='Document Chat';
+  document.getElementById('chatRole').textContent='Discuss a text · English';
+  document.getElementById('chatMessages').innerHTML='';
+  chatHistory=[];
+  addLoading('chatMessages');
+  const firstMsgContent = hwDocPersonaFile
+    ? [{type:'text',text:'Here is a document I would like to discuss:'},{type:'image',source:{type:'base64',media_type:hwDocPersonaFile.mediaType,data:hwDocPersonaFile.base64}}]
+    : [{type:'text',text:'Here is the text I would like to discuss:\n\n'+textContent}];
+  apiFetch([{role:'user',content:firstMsgContent}], sysPrompt, reply=>{
+    const loadEl=document.getElementById('loadingMsg'); if(loadEl) loadEl.remove();
+    const parts = reply.split('---KORREKTION---');
+    appendMsg('chatMessages','📄',parts[0].trim(), parts[1]?parts[1].trim():null);
+    chatHistory.push({role:'user',content:firstMsgContent});
+    chatHistory.push({role:'assistant',content:reply});
+  });
+}
+
 function clearChat() {
   chatHistory=[];
   const p=personas[currentPersona]||personas.emma;
@@ -734,33 +820,85 @@ function parseWritingErrors(text, source) {
     if(m) addErrorEntry({ source, fehl:m[1].trim(), ret:m[2].trim(), tip:'' });
   });
 }
-function addErrorEntry({source,fehl,ret,tip}) {
+function addErrorEntry({source,fehl,ret,tip,erklaerung_de,fehlertyp,schwere,tipp_de,modulId,einheitTyp}) {
   if (!fehl) return;
-  autoTagError({ source, fehl, ret, tip });
+  const entry = { source, fehl, ret, tip:tip||tipp_de||'', erklaerung_de:erklaerung_de||'', fehlertyp:fehlertyp||'', schwere:schwere||'', tipp_de:tipp_de||tip||'', modulId:modulId||'', einheitTyp:einheitTyp||'', reviewed:false, nochmalGeubt:false, tags:[] };
+  autoTagError(entry);
 }
+
+// Analysiert freien Englisch-Text und speichert Fehler ins Log
+async function analysiereEingaben(text, source, modulId, einheitTyp) {
+  if (!text || !text.trim()) return;
+  const niveau = (appSettings && appSettings.niveau) || 'A1';
+  const prompt = `Du bist ein geduldiger, ermutigender Englisch-Lehrer für deutschsprachige Lernende (Niveau: ${niveau}). Analysiere die englischen Eingaben des Nutzers.
+
+Antworte NUR mit JSON. Kein Markdown. Kein Text außerhalb des JSON.
+
+[
+  {
+    "fehler": "Der falsche Originaltext",
+    "korrektur": "Die richtige Version",
+    "erklaerung_de": "Erklärung auf Deutsch warum das falsch ist. Grammatikregel nennen. Eselsbrücke wenn möglich.",
+    "fehlertyp": "Zeitform|Grammatik|Wortstellung|Präposition|Vokabel|Artikel|Anglizismus|Interpunktion",
+    "schwere": "leicht|mittel|schwer",
+    "tipp_de": "Ein konkreter Merksatz oder Trick auf Deutsch für diesen Fehlertyp"
+  }
+]
+
+Maximal 3 Fehler. Wichtigste zuerst. Tippfehler ignorieren.
+Leeres Array [] wenn keine relevanten Fehler gefunden.
+Sei ermutigend, nie kritisierend.
+
+Text des Lernenden: "${text}"`;
+  try {
+    const res = await apiFetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model:MODEL_HAIKU, max_tokens:600, messages:[{role:'user',content:prompt}] }) });
+    if (!res) return;
+    const data = await res.json();
+    const raw = (data.content||[]).map(c=>c.text||'').join('').trim();
+    const jsonStr = raw.match(/\[[\s\S]*\]/)?.[0] || '[]';
+    const fehler = JSON.parse(jsonStr);
+    fehler.forEach(f => {
+      if (f.fehler) addErrorEntry({ source, fehl:f.fehler, ret:f.korrektur||'', erklaerung_de:f.erklaerung_de||'', fehlertyp:f.fehlertyp||'', schwere:f.schwere||'mittel', tipp_de:f.tipp_de||'', modulId:modulId||'', einheitTyp:einheitTyp||'' });
+    });
+  } catch(e) { console.warn('Fehleranalyse fehlgeschlagen:', e); }
+}
+
 async function autoTagError(entry) {
-  const tagPrompt=`Analyze this English language error and return ONLY a JSON object with these fields:
-fehlertyp: one of [grammar, wortstellung, wortwahl, aussprache]
-schwierigkeit: one of [leicht, mittel, schwer]
-thema: one of [reisen, gesundheit, alltag, familie, arbeit, formell]
+  // Wenn schon vollständige Daten vorhanden, direkt speichern
+  if (entry.fehlertyp && entry.erklaerung_de) {
+    entry.tags = [entry.fehlertyp, entry.schwere].filter(Boolean);
+    entry.id = Date.now() + Math.random();
+    entry.isoDate = new Date().toISOString();
+    entry.date = fmtDate(entry.isoDate);
+    window.errorLog.unshift(entry);
+    saveData();
+    return;
+  }
+  const tagPrompt = `Analyze this English language error and return ONLY a JSON object with these fields:
+fehlertyp: one of [Grammatik, Zeitform, Wortstellung, Präposition, Vokabel, Artikel, Anglizismus, Interpunktion]
+schwere: one of [leicht, mittel, schwer]
+erklaerung_de: short explanation in German (1 sentence)
+tipp_de: a memory tip in German (1 sentence)
 
 Error: "${entry.fehl}" → Correct: "${entry.ret}"
-
 Return only the JSON, no other text.`;
   try {
-    const res=await apiFetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:MODEL,max_tokens:100,messages:[{role:'user',content:tagPrompt}]})});
-    if(!res) throw new Error('no response');
-    const data=await res.json();
-    const raw=data.content.map(c=>c.text||'').join('').trim();
-    const tags=JSON.parse(raw.replace(/```json|```/g,'').trim());
-    entry.tags=[tags.fehlertyp,tags.schwierigkeit,tags.thema].filter(Boolean);
+    const res = await apiFetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model:MODEL_HAIKU, max_tokens:200, messages:[{role:'user',content:tagPrompt}] }) });
+    if (!res) throw new Error('no response');
+    const data = await res.json();
+    const raw = data.content.map(c=>c.text||'').join('').trim();
+    const tags = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    entry.fehlertyp = tags.fehlertyp || '';
+    entry.schwere   = tags.schwere   || 'mittel';
+    entry.erklaerung_de = tags.erklaerung_de || '';
+    entry.tipp_de   = tags.tipp_de   || '';
+    entry.tags = [tags.fehlertyp, tags.schwere].filter(Boolean);
   } catch(e) {
-    entry.tags=[];
+    entry.tags = [];
   }
-  entry.id=Date.now()+Math.random();
-  entry.isoDate=new Date().toISOString();
-  entry.date=fmtDate(entry.isoDate);
+  entry.id = Date.now() + Math.random();
+  entry.isoDate = new Date().toISOString();
+  entry.date = fmtDate(entry.isoDate);
   window.errorLog.unshift(entry);
   saveData();
 }
@@ -1147,29 +1285,130 @@ window.renderErrors = function(logMode) {
     el.innerHTML=`<div class="error-log-empty"><div class="big-icon">${list.length?'🔍':'🎉'}</div><p>${list.length?'Keine Ergebnisse':'Noch keine Fehler! Üben Sie, um Verbesserungsbereiche zu finden.'}</p></div>`;
     return;
   }
-  el.innerHTML=filtered.map(e=>`<div class="error-entry" id="err-${e.id}">
-    <div class="error-entry-header">
-      <span class="error-source-badge badge-${e.source||'other'}">${sourceLabel[e.source]||e.source||'Unbekannt'}</span>
-      <span class="error-date">${e.date||''}</span>
-      <button class="del-btn" onclick="deleteError('${e.id}',false)" title="Löschen">✕</button>
-      <button class="archive-btn" onclick="archiveError('${e.id}')" title="Archivieren">📦</button>
-    </div>
-    <div class="error-row">
-      <div class="error-col"><label>Fehler</label><span class="error-wrong">${esc(e.fehl||'')}</span></div>
-      <div class="error-col"><label>Korrektur</label><span class="error-right">${esc(e.ret||'')}</span></div>
-    </div>
-    ${e.tip?`<div class="error-tip">💡 ${esc(e.tip)}</div>`:''}
-    <div class="error-tags">${(e.tags||[]).map(tag=>`<span class="error-tag ${tagClass[tag]||''}" onclick="toggleTagFilter('${tag}')">${tagLabel[tag]||tag}</span>`).join('')}</div>
-  </div>`).join('');
+  el.innerHTML=filtered.map(e=>{
+    const schwereColor = {leicht:'#2e7d32',mittel:'#e65100',schwer:'#c62828'}[e.schwere] || 'var(--muted)';
+    const hasFull = !!(e.erklaerung_de || e.tipp_de);
+    const uid = String(e.id).replace(/\./g,'_');
+    return `<div class="error-entry" id="err-${uid}">
+      <div class="error-entry-header" style="flex-wrap:wrap;gap:6px;">
+        ${e.fehlertyp?`<span style="background:rgba(27,94,166,0.1);color:var(--blue);font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:8px;">${esc(e.fehlertyp)}</span>`:''}
+        ${e.schwere?`<span style="background:${schwereColor}22;color:${schwereColor};font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:8px;">${esc(e.schwere)}</span>`:''}
+        <span class="error-source-badge badge-${e.source||'other'}" style="font-size:0.7rem;">${sourceLabel[e.source]||e.source||'Unbekannt'}</span>
+        <span class="error-date" style="margin-left:auto;">${e.date||''}</span>
+        <button class="del-btn" onclick="deleteError('${uid}',false)" title="Löschen">✕</button>
+        <button class="archive-btn" onclick="archiveError('${uid}')" title="Archivieren">📦</button>
+      </div>
+      <div class="error-row" style="margin-top:10px;">
+        <div class="error-col"><label>❌ Fehler</label><span class="error-wrong">${esc(e.fehl||'')}</span></div>
+        <div class="error-col"><label>✅ Korrektur</label><span class="error-right">${esc(e.ret||'')}</span></div>
+      </div>
+      ${hasFull ? `
+        <div style="margin-top:10px;">
+          <button onclick="lpErrToggleExplain('${uid}')" style="background:none;border:none;cursor:pointer;font-size:0.82rem;color:var(--blue);padding:0;display:flex;align-items:center;gap:4px;">
+            📖 Erklärung <span id="lpErrIcon${uid}">▼</span>
+          </button>
+          <div id="lpErrExplain${uid}" style="display:none;margin-top:8px;padding:10px 14px;background:rgba(27,94,166,0.06);border-radius:8px;font-size:0.85rem;line-height:1.7;">
+            ${e.erklaerung_de ? `<div>${esc(e.erklaerung_de)}</div>` : ''}
+            ${e.tipp_de ? `<div style="margin-top:6px;color:var(--muted);font-style:italic;">💡 ${esc(e.tipp_de)}</div>` : ''}
+          </div>
+        </div>
+      ` : `
+        <button onclick="lpErrFetchExplain('${uid}')" style="background:none;border:none;cursor:pointer;font-size:0.8rem;color:var(--muted);padding:4px 0;display:flex;align-items:center;gap:4px;margin-top:6px;">
+          🤖 Erklärung nachladen
+        </button>
+        <div id="lpErrExplain${uid}" style="display:none;"></div>
+      `}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="lpErrUeben('${uid}')" style="font-size:0.8rem;">🔄 Nochmal üben</button>
+        ${e.reviewed?`<span style="font-size:0.8rem;color:#2e7d32;display:flex;align-items:center;gap:4px;">✓ Erledigt</span>`:`<button class="btn btn-ghost btn-sm" onclick="lpErrMarkDone('${uid}')" style="font-size:0.8rem;color:#2e7d32;">✓ Erledigt</button>`}
+      </div>
+    </div>`;
+  }).join('');
 };
 function deleteError(id, fromArchive) {
-  if(fromArchive) window.archiveLog=window.archiveLog.filter(e=>String(e.id)!==String(id));
-  else window.errorLog=window.errorLog.filter(e=>String(e.id)!==String(id));
+  const sid = String(id).replace(/\./g,'_');
+  if(fromArchive) window.archiveLog=window.archiveLog.filter(e=>String(e.id).replace(/\./g,'_')!==sid);
+  else window.errorLog=window.errorLog.filter(e=>String(e.id).replace(/\./g,'_')!==sid);
   saveData(); renderErrors();
 }
 function archiveError(id) {
-  const idx=window.errorLog.findIndex(e=>String(e.id)===String(id));
+  const sid = String(id).replace(/\./g,'_');
+  const idx=window.errorLog.findIndex(e=>String(e.id).replace(/\./g,'_')===sid);
   if(idx>-1){ window.archiveLog.unshift(window.errorLog[idx]); window.errorLog.splice(idx,1); saveData(); renderErrors(); }
+}
+function lpErrToggleExplain(uid) {
+  const box = document.getElementById('lpErrExplain'+uid);
+  const icon = document.getElementById('lpErrIcon'+uid);
+  if (!box) return;
+  const open = box.style.display !== 'none';
+  box.style.display = open ? 'none' : 'block';
+  if (icon) icon.textContent = open ? '▼' : '▲';
+}
+async function lpErrFetchExplain(uid) {
+  const entry = window.errorLog.find(e => String(e.id).replace(/\./g,'_') === uid);
+  if (!entry) return;
+  const box = document.getElementById('lpErrExplain'+uid);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<span style="color:var(--muted);font-size:0.85rem;">Wird geladen…</span>';
+  try {
+    const res = await apiFetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model:MODEL_HAIKU, max_tokens:200, messages:[{role:'user',content:`Erkläre auf Deutsch in 2 Sätzen warum dieser Englischfehler falsch ist und gib einen Merksatz. Fehler: "${entry.fehl}" → Richtig: "${entry.ret}". Antworte nur mit: Erklärung: ... | Tipp: ...`}] }) });
+    const data = await res.json();
+    const text = (data.content||[]).map(c=>c.text||'').join('');
+    const [expl, tipp] = text.split('|').map(s=>s.replace(/^(Erklärung|Tipp):\s*/,'').trim());
+    entry.erklaerung_de = expl || text;
+    entry.tipp_de = tipp || '';
+    saveData();
+    box.innerHTML = `<div style="font-size:0.85rem;line-height:1.7;">${esc(expl||text)}${tipp?`<div style="margin-top:6px;color:var(--muted);font-style:italic;">💡 ${esc(tipp)}</div>`:''}</div>`;
+  } catch(e) { box.innerHTML = '<span style="color:var(--muted);font-size:0.85rem;">Konnte nicht geladen werden.</span>'; }
+}
+function lpErrMarkDone(uid) {
+  const entry = window.errorLog.find(e => String(e.id).replace(/\./g,'_') === uid);
+  if (entry) { entry.reviewed = true; saveData(); renderErrors(); }
+}
+function lpErrUeben(uid) {
+  const entry = window.errorLog.find(e => String(e.id).replace(/\./g,'_') === uid);
+  if (!entry) return;
+  entry.nochmalGeubt = true;
+  saveData();
+  // Öffnet Chat mit Fokus auf diesen Fehler
+  showTab('chat');
+  const hint = `Konzentriere dich heute besonders auf diesen Fehler: "${entry.fehl}" → korrekt: "${entry.ret}". Baue das natürlich ins Gespräch ein und korrigiere sanft wenn der Fehler nochmal passiert.`;
+  window._lpFehlerHint = hint;
+  setTimeout(() => {
+    const el = document.getElementById('chatInput');
+    if (el) { el.focus(); el.placeholder = `Übe: "${entry.fehl}" → "${entry.ret}"…`; }
+  }, 300);
+}
+
+// ── Weekly Recap ──────────────────────────────────────────────────────
+function renderWeeklyRecap() {
+  const el = document.getElementById('weeklyRecapWidget');
+  if (!el) return;
+  const now = new Date();
+  const weekAgo = new Date(now - 7*24*60*60*1000);
+  const thisWeek = (window.errorLog||[]).filter(e => e.isoDate && new Date(e.isoDate) >= weekAgo);
+  const p = lpGetProgress ? lpGetProgress() : {};
+  const doneThisWeek = (p.completedUnits||[]).length; // rough proxy
+
+  if (!thisWeek.length && !doneThisWeek) { el.style.display = 'none'; return; }
+
+  // Häufigster Fehlertyp
+  const typCount = {};
+  thisWeek.forEach(e => { if(e.fehlertyp) typCount[e.fehlertyp] = (typCount[e.fehlertyp]||0)+1; });
+  const topType = Object.entries(typCount).sort((a,b)=>b[1]-a[1])[0];
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div onclick="showTab('log')" style="background:rgba(27,94,166,0.07);border:1px solid rgba(27,94,166,0.15);border-radius:12px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='0 2px 10px rgba(0,0,0,0.07)'" onmouseout="this.style.boxShadow=''">
+      <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">📊 Diese Woche</div>
+      <div style="font-size:0.9rem;color:var(--white);">
+        ${doneThisWeek ? `<span style="margin-right:12px;">✅ ${doneThisWeek} Einheiten</span>` : ''}
+        ${thisWeek.length ? `<span style="margin-right:12px;">⚠️ ${thisWeek.length} Fehler</span>` : ''}
+        ${topType ? `<span>häufigster Typ: <strong>${topType[0]}</strong></span>` : ''}
+      </div>
+    </div>
+  `;
 }
 function setFilter(f,btn) {
   currentFilter=f;
@@ -1833,6 +2072,7 @@ function renderHome() {
   const tip=getDailyTip();
   const el4=document.getElementById('tipCat'); if(el4) el4.textContent=tip.cat;
   const el5=document.getElementById('tipText'); if(el5) el5.textContent=tip.text;
+  renderWeeklyRecap();
 }
 
 // ── Init ─────────────────────────────────────────────────────────────
@@ -1891,3 +2131,1169 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   setInterval(()=>{ if(document.getElementById('start').classList.contains('active')) renderHome(); }, 60000);
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// LERNPFAD
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Daten ─────────────────────────────────────────────────────────────
+const LP_MODULES = [
+  { id:'m1', level:'A1', title:'Erste Schritte', desc:'Begrüßen, Vorstellen, Zahlen, Farben', units:[
+    { id:'m1u1', type:'vokabeln', title:'Grundwörter: Alltag & Personen', vocab:[
+      {de:'Hallo / Guten Tag',en:'Hello / Good day',hint:'„Hello" passt immer'},
+      {de:'Tschüss / Auf Wiedersehen',en:'Goodbye / Bye',hint:'„Bye" ist informell'},
+      {de:'Bitte',en:'Please',hint:'immer am Satzende'},
+      {de:'Danke',en:'Thank you / Thanks',hint:'„Thanks" lockerer'},
+      {de:'Ja / Nein',en:'Yes / No',hint:''},
+      {de:'Ich heiße …',en:'My name is …',hint:'wörtlich: Mein Name ist'},
+      {de:'Wie geht es dir?',en:'How are you?',hint:'„How are you?" Standard-Gruß'},
+      {de:'Gut, danke.',en:'Fine, thank you.',hint:''},
+    ]},
+    { id:'m1u2', type:'grammatik', title:'to be: am / is / are', rule:'Im Deutschen sagst du „ich bin / du bist / er ist" – auf Englisch: I am, you are, he/she/it is, we/they are. Das Verb kommt immer direkt nach dem Pronomen. Verneinung: I am not → I\'m not.', examples:['I am a student.','She is from Germany.','They are happy.'], translations:['Ich bin müde.','Er ist nett.','Wir sind hier.','Sie sind Lehrerin.'] },
+    { id:'m1u3', type:'dialog', title:'Sich vorstellen', scenario:'Du triffst jemanden zum ersten Mal – auf einer Sprachreise in England. Emma spielt die neue Bekanntschaft.', role:'Emma', sceneDE:'Du bist auf einer Sprachreise in England und triffst Emma beim Frühstück.' },
+    { id:'m1u4', type:'vokabeln', title:'Zahlen 1–20 & Farben', vocab:[
+      {de:'Eins bis Zehn',en:'One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten',hint:''},
+      {de:'Elf bis Zwanzig',en:'Eleven, Twelve, Thirteen, Fourteen, Fifteen, Sixteen, Seventeen, Eighteen, Nineteen, Twenty',hint:''},
+      {de:'Rot / Blau / Grün',en:'Red / Blue / Green',hint:''},
+      {de:'Gelb / Schwarz / Weiß',en:'Yellow / Black / White',hint:''},
+      {de:'Groß / Klein',en:'Big / Small',hint:''},
+    ]},
+    { id:'m1u5', type:'grammatik', title:'Artikel: a / an / the', rule:'Im Englischen gibt es nur einen unbestimmten Artikel: „a" vor Konsonanten (a cat), „an" vor Vokalen (an apple). „The" ist der bestimmte Artikel – wie „der/die/das" auf Deutsch. Aber: Im Englischen gibt es kein Geschlecht!', examples:['I have a dog.','She eats an apple.','The book is red.'], translations:['Ich habe einen Hund.','Das ist eine Katze.','Der Apfel ist grün.','Ein Mann ist da.'] },
+    { id:'m1u6', type:'dialog', title:'Im Café bestellen', scenario:'Du bist in einem englischen Café und möchtest etwas bestellen. Emma spielt die Kellnerin.', role:'Emma', sceneDE:'Du sitzt in einem gemütlichen Café in London. Die Kellnerin Emma kommt zu dir.' },
+    { id:'m1u7', type:'schreiben', title:'Kurze Vorstellung', aufgabe:'Schreib 3–5 Sätze auf Englisch über dich: Wie heißt du? Woher kommst du? Wie alt bist du? Was magst du?' },
+    { id:'m1u8', type:'kurztest', title:'Modul-Test: Erste Schritte', questions: lpBuildTest('m1') },
+  ]},
+  { id:'m2', level:'A1', title:'Mein Alltag', desc:'Familie, Tagesablauf, Uhrzeit, Einkaufen', units:[
+    { id:'m2u1', type:'vokabeln', title:'Familie & Personen', vocab:[
+      {de:'Mutter / Vater',en:'Mother / Father',hint:'informell: Mum / Dad'},
+      {de:'Bruder / Schwester',en:'Brother / Sister',hint:''},
+      {de:'Sohn / Tochter',en:'Son / Daughter',hint:'„daughter" = [ˈdɔːtər]'},
+      {de:'Ehemann / Ehefrau',en:'Husband / Wife',hint:''},
+      {de:'Großmutter / Großvater',en:'Grandmother / Grandfather',hint:'informell: Grandma / Grandpa'},
+      {de:'Kind / Kinder',en:'Child / Children',hint:'unregelmäßiger Plural!'},
+      {de:'Freund / Freundin',en:'Friend',hint:'kein Geschlecht im Englischen'},
+    ]},
+    { id:'m2u2', type:'grammatik', title:'Simple Present', rule:'Das Simple Present beschreibt Gewohnheiten und Routinen. Mit he/she/it hängt man -s ans Verb: I eat → she eats, I go → he goes. Verneinung: I don\'t / he doesn\'t + Infinitiv.', examples:['I drink coffee every morning.','She works in a hospital.','They don\'t eat meat.'], translations:['Ich trinke jeden Tag Tee.','Er arbeitet nicht am Montag.','Wir essen um 18 Uhr.','Sie schläft lange.'] },
+    { id:'m2u3', type:'dialog', title:'Über die Familie erzählen', scenario:'Du erzählst Emma von deiner Familie.', role:'Emma', sceneDE:'Du und Emma sitzen im Park. Sie fragt dich über deine Familie.' },
+    { id:'m2u4', type:'vokabeln', title:'Tagesablauf & Uhrzeit', vocab:[
+      {de:'Morgens / Abends',en:'In the morning / In the evening',hint:''},
+      {de:'Frühstück / Mittagessen / Abendessen',en:'Breakfast / Lunch / Dinner',hint:''},
+      {de:'Aufstehen / Schlafen gehen',en:'To get up / To go to bed',hint:''},
+      {de:'Zur Arbeit gehen',en:'To go to work',hint:''},
+      {de:'Um 8 Uhr',en:'At 8 o\'clock',hint:'„at" für Uhrzeiten'},
+      {de:'Halb drei',en:'Half past two',hint:'Achtung: auf Englisch anders!'},
+    ]},
+    { id:'m2u5', type:'grammatik', title:'have / has & Possessivpronomen', rule:'„Have" bedeutet „haben". Mit he/she/it wird es zu „has": I have a car → She has a car. Possessivpronomen: my (mein), your (dein), his/her (sein/ihr), our (unser), their (ihr).', examples:['I have two brothers.','He has a big house.','Her name is Anna.'], translations:['Ich habe einen Bruder.','Ihr Auto ist neu.','Unser Haus ist klein.','Sein Name ist Tom.'] },
+    { id:'m2u6', type:'dialog', title:'Im Supermarkt', scenario:'Du kaufst im englischen Supermarkt ein und brauchst Hilfe.', role:'Emma', sceneDE:'Du bist in einem Supermarkt in England und findest etwas nicht.' },
+    { id:'m2u7', type:'schreiben', title:'Mein typischer Tag', aufgabe:'Beschreib deinen typischen Tag auf Englisch: Was machst du morgens, mittags, abends? Benutze Simple Present.' },
+    { id:'m2u8', type:'kurztest', title:'Modul-Test: Mein Alltag', questions: lpBuildTest('m2') },
+  ]},
+  { id:'m3', level:'A1', title:'Orientierung', desc:'Orte, Richtungen, Restaurant, Hilfe bitten', units:[
+    { id:'m3u1', type:'vokabeln', title:'Orte in der Stadt', vocab:[
+      {de:'Bahnhof',en:'Train station',hint:''},
+      {de:'Flughafen',en:'Airport',hint:'[ˈɛːpɔːt]'},
+      {de:'Krankenhaus',en:'Hospital',hint:''},
+      {de:'Apotheke',en:'Pharmacy / Chemist',hint:'„Chemist" in GB'},
+      {de:'Supermarkt',en:'Supermarket',hint:''},
+      {de:'Bank',en:'Bank',hint:'gleich! Aussprache verschieden'},
+      {de:'Hotel',en:'Hotel',hint:'Betonung auf 2. Silbe: ho-TEL'},
+      {de:'Kirche',en:'Church',hint:''},
+    ]},
+    { id:'m3u2', type:'grammatik', title:'Ortsangaben: in / on / at / next to', rule:'In Englisch: „in" für Räume/Städte (in the room, in London), „on" für Flächen/Straßen (on the table, on Baker Street), „at" für Punkte/Adressen (at the bus stop, at number 5), „next to" für daneben. Kein „bei" wie im Deutschen!', examples:['The book is on the table.','She lives in Berlin.','I\'ll meet you at the station.'], translations:['Das Buch liegt auf dem Tisch.','Er wohnt in der Stadt.','Wir treffen uns an der Haltestelle.','Das Café ist neben der Bank.'] },
+    { id:'m3u3', type:'dialog', title:'Nach dem Weg fragen', scenario:'Du bist in London und fragst nach dem Weg zum Bahnhof.', role:'Emma', sceneDE:'Du stehst auf einer Straße in London und bist verloren. Emma geht vorbei.' },
+    { id:'m3u4', type:'vokabeln', title:'Richtungen & Essen', vocab:[
+      {de:'Links / Rechts',en:'Left / Right',hint:''},
+      {de:'Geradeaus',en:'Straight ahead',hint:''},
+      {de:'Um die Ecke',en:'Around the corner',hint:''},
+      {de:'Wasser / Kaffee / Tee',en:'Water / Coffee / Tea',hint:''},
+      {de:'Fleisch / Fisch / Gemüse',en:'Meat / Fish / Vegetables',hint:''},
+      {de:'Die Rechnung bitte',en:'The bill, please',hint:'in den USA: „the check"'},
+    ]},
+    { id:'m3u5', type:'grammatik', title:'there is / there are', rule:'„There is" (= es gibt) für Singular, „there are" für Plural. Verneinung: there isn\'t / there aren\'t. Frage: Is there…? / Are there…? Auf Deutsch sagst du immer „es gibt" – Englisch unterscheidet Singular und Plural!', examples:['There is a café near here.','There are three people in the room.','Is there a bank nearby?'], translations:['Es gibt eine Apotheke hier.','Es gibt viele Touristen.','Gibt es ein Hotel in der Nähe?','Es gibt keinen Supermarkt.'] },
+    { id:'m3u6', type:'dialog', title:'Im Restaurant bestellen', scenario:'Du isst in einem englischen Restaurant zu Abend.', role:'Emma', sceneDE:'Du sitzt in einem Restaurant in England. Emma ist die Kellnerin.' },
+    { id:'m3u7', type:'schreiben', title:'Wegbeschreibung', aufgabe:'Schreib auf Englisch eine Wegbeschreibung vom Bahnhof zu deinem Hotel. Nutze: left, right, straight ahead, next to, there is.' },
+    { id:'m3u8', type:'kurztest', title:'Modul-Test: Orientierung', questions: lpBuildTest('m3') },
+  ]},
+  { id:'m4', level:'A2', title:'Beruf & Alltag', desc:'Berufe, E-Mails, Fähigkeiten, Pläne', units:[
+    { id:'m4u1', type:'vokabeln', title:'Berufe & Büro', vocab:[
+      {de:'Arzt / Ärztin',en:'Doctor',hint:'kein Geschlecht'},
+      {de:'Lehrer/in',en:'Teacher',hint:''},
+      {de:'Ingenieur/in',en:'Engineer',hint:'[ˌɛndʒɪˈnɪər]'},
+      {de:'Rentner/in',en:'Retired / Pensioner',hint:'„I\'m retired"'},
+      {de:'Büro',en:'Office',hint:''},
+      {de:'Besprechung',en:'Meeting',hint:''},
+      {de:'E-Mail schreiben',en:'To write an email',hint:''},
+      {de:'Kollege/in',en:'Colleague',hint:'[ˈkɒliːɡ]'},
+    ]},
+    { id:'m4u2', type:'grammatik', title:'can / can\'t', rule:'„Can" drückt Können/Fähigkeit aus. Es ist ein Modalverb – kein -s bei he/she/it! She can swim (NICHT she cans). Verneinung: cannot = can\'t. Frage: Can you…? Auf Deutsch: „können" + Modalverb-Endung – im Englischen bleibt es immer gleich!', examples:['I can speak English.','She can\'t drive a car.','Can you help me?'], translations:['Ich kann Gitarre spielen.','Er kann nicht kochen.','Kannst du mir helfen?','Wir können morgen kommen.'] },
+    { id:'m4u3', type:'dialog', title:'Den eigenen Job erklären', scenario:'Du erklärst Emma, was du beruflich machst oder gemacht hast.', role:'Emma', sceneDE:'Emma fragt dich bei einem Kaffee, was du beruflich machst oder früher gemacht hast.' },
+    { id:'m4u4', type:'grammatik', title:'Fragesätze: do / does / did', rule:'Im Simple Present braucht man „do" (I/you/we/they) oder „does" (he/she/it) für Fragen: Do you like…? Does she work…? Im Simple Past: „did" für alle Personen. Das Hauptverb bleibt im Infinitiv! NICHT: Does she works?', examples:['Do you speak English?','Does he like coffee?','Did they arrive on time?'], translations:['Arbeitest du in einem Büro?','Mag sie Kaffee?','Habt ihr gestern gearbeitet?','Fährt er mit dem Bus?'] },
+    { id:'m4u5', type:'dialog', title:'Termin vereinbaren', scenario:'Du rufst an und möchtest einen Termin beim Arzt vereinbaren.', role:'Emma', sceneDE:'Du rufst bei einer Arztpraxis in England an. Emma nimmt ab.' },
+    { id:'m4u6', type:'vokabeln', title:'Aktivitäten & Pläne', vocab:[
+      {de:'Reisen',en:'To travel',hint:''},
+      {de:'Kochen',en:'To cook',hint:''},
+      {de:'Lesen',en:'To read',hint:''},
+      {de:'Spazieren gehen',en:'To go for a walk',hint:''},
+      {de:'Nächste Woche',en:'Next week',hint:''},
+      {de:'Morgen',en:'Tomorrow',hint:''},
+    ]},
+    { id:'m4u7', type:'schreiben', title:'Berufliche E-Mail', aufgabe:'Schreib eine kurze E-Mail auf Englisch an deinen Chef. Du bist morgen krank und kannst nicht zur Arbeit kommen. Fang mit „Dear Mr./Mrs. Smith," an.' },
+    { id:'m4u8', type:'grammatik', title:'going to – Pläne ausdrücken', rule:'„Going to" drückt geplante Absichten aus: I am going to visit my friend. Man bildet es mit: am/is/are + going to + Infinitiv. Auf Deutsch: „Ich habe vor, …" oder „Ich werde …". Für spontane Entscheidungen nimmt man „will" – aber das kommt später!', examples:['I\'m going to learn English.','She\'s going to visit London.','They\'re going to cook dinner.'], translations:['Ich werde morgen spazieren gehen.','Er plant, Englisch zu lernen.','Wir werden das Wochenende in Wien verbringen.','Sie wird ihren Arzt besuchen.'] },
+    { id:'m4u9', type:'kurztest', title:'Modul-Test: Beruf & Alltag', questions: lpBuildTest('m4') },
+  ]},
+  { id:'m5', level:'A2', title:'Freizeit & Interessen', desc:'Hobbys, Sport, Einladen, Ablehnen', units:[
+    { id:'m5u1', type:'vokabeln', title:'Sport & Hobbys', vocab:[
+      {de:'Schwimmen',en:'Swimming',hint:''},
+      {de:'Wandern',en:'Hiking',hint:'[ˈhaɪkɪŋ]'},
+      {de:'Gartenarbeit',en:'Gardening',hint:''},
+      {de:'Kochen',en:'Cooking',hint:'als Hobby: „I love cooking"'},
+      {de:'Musik hören',en:'Listening to music',hint:''},
+      {de:'Lesen',en:'Reading',hint:''},
+      {de:'Reisen',en:'Travelling',hint:''},
+      {de:'Tanzen',en:'Dancing',hint:''},
+    ]},
+    { id:'m5u2', type:'grammatik', title:'like / love / hate + -ing', rule:'Nach „like, love, enjoy, hate, don\'t mind" folgt immer das Gerundium (-ing): I like swimming, She loves cooking. NICHT: I like to swim (auch möglich, aber -ing ist gebräuchlicher). Auf Deutsch sagst du „Ich mag schwimmen" – im Englischen braucht das Verb eine -ing-Form!', examples:['I love travelling by train.','He hates getting up early.','Do you enjoy cooking?'], translations:['Ich mag gern wandern.','Sie hasst früh aufstehen.','Er mag Musik hören.','Magst du kochen?'] },
+    { id:'m5u3', type:'dialog', title:'Freizeitpläne besprechen', scenario:'Du besprichst mit Emma, was ihr am Wochenende machen könntet.', role:'Emma', sceneDE:'Emma fragt dich, was du am Wochenende vorhast – vielleicht plant ihr etwas gemeinsam.' },
+    { id:'m5u4', type:'grammatik', title:'Adjektive & Steigerung', rule:'Englische Adjektive stehen VOR dem Nomen (a big house), nicht danach. Steigerung: kurze Adjektive + -er/-est (big→bigger→biggest), lange Adjektive mit more/most (interesting→more interesting). Unregelmäßig: good→better→best, bad→worse→worst.', examples:['This is a beautiful city.','London is bigger than Berlin.','That was the best meal I ever had.'], translations:['Das ist ein schöner Park.','Dieses Buch ist interessanter.','Das ist das beste Restaurant.','Er ist freundlicher als sie.'] },
+    { id:'m5u5', type:'dialog', title:'Einen Film empfehlen', scenario:'Du empfiehlst Emma einen Film oder eine Serie.', role:'Emma', sceneDE:'Emma fragt, ob du einen guten Film oder eine Serie zum Empfehlen hast.' },
+    { id:'m5u6', type:'vokabeln', title:'Meinungen ausdrücken', vocab:[
+      {de:'Ich finde … toll',en:'I think … is great',hint:''},
+      {de:'Das gefällt mir',en:'I like it / I enjoy it',hint:''},
+      {de:'Ich bin anderer Meinung',en:'I disagree / I don\'t think so',hint:'höflich!'},
+      {de:'Vielleicht',en:'Maybe / Perhaps',hint:''},
+      {de:'Es kommt darauf an',en:'It depends',hint:'sehr nützlich!'},
+    ]},
+    { id:'m5u7', type:'schreiben', title:'Wochenende beschreiben', aufgabe:'Beschreib dein letztes Wochenende auf Englisch (3–5 Sätze). Was hast du gemacht? Benutze Simple Past: I went, I watched, I cooked…' },
+    { id:'m5u8', type:'grammatik', title:'going to vs. will', rule:'„Going to" = geplante Absicht: I\'m going to call her later (ich habe das vor). „Will" = spontane Entscheidung oder Versprechen: I\'ll help you! (jetzt entschieden). Im Deutschen sagt man beides oft mit „werden" – im Englischen gibt es diesen Unterschied!', examples:['I\'m going to visit my sister this weekend.','Oh, the phone is ringing – I\'ll get it!','She\'s going to start a new course.'], translations:['Ich werde ihr eine Karte schicken (spontan).','Wir planen, nach London zu fahren.','Ich verspreche, ich werde helfen.','Er hat vor, Sport zu treiben.'] },
+    { id:'m5u9', type:'kurztest', title:'Modul-Test: Freizeit & Interessen', questions: lpBuildTest('m5') },
+  ]},
+  { id:'m6', level:'A2', title:'Reisen', desc:'Flughafen, Hotel, Reiseprobleme, Wetter', units:[
+    { id:'m6u1', type:'vokabeln', title:'Reise & Transport', vocab:[
+      {de:'Flug',en:'Flight',hint:''},
+      {de:'Gepäck',en:'Luggage / Baggage',hint:'kein Plural in EN'},
+      {de:'Reisepass',en:'Passport',hint:''},
+      {de:'Visum',en:'Visa',hint:''},
+      {de:'Buchen',en:'To book',hint:''},
+      {de:'Einchecken',en:'To check in',hint:''},
+      {de:'Verspätung',en:'Delay',hint:'„My flight is delayed"'},
+      {de:'Ankunft / Abflug',en:'Arrival / Departure',hint:''},
+    ]},
+    { id:'m6u2', type:'grammatik', title:'Simple Past regelmäßig', rule:'Das Simple Past beschreibt abgeschlossene Handlungen in der Vergangenheit. Regelmäßige Verben: + -ed (work→worked, travel→travelled). Verneinung: didn\'t + Infinitiv (I didn\'t work). Frage: Did you…? Tipp: Nach „didn\'t" kommt IMMER der Infinitiv – nicht die Past-Form!', examples:['I walked to the station.','She didn\'t arrive on time.','Did you enjoy the trip?'], translations:['Ich buchte das Hotel online.','Wir reisten letzten Sommer.','Landete das Flugzeug pünktlich?','Er packte seinen Koffer.'] },
+    { id:'m6u3', type:'dialog', title:'Am Flughafen einchecken', scenario:'Du checkst am Flughafen in London ein.', role:'Emma', sceneDE:'Du stehst am Check-in-Schalter eines Londoner Flughafens. Emma arbeitet dort.' },
+    { id:'m6u4', type:'grammatik', title:'Simple Past unregelmäßig', rule:'Viele häufige Verben sind unregelmäßig – sie müssen auswendig gelernt werden: go→went, see→saw, come→came, have→had, be→was/were, eat→ate, buy→bought, say→said. Verneinung und Fragen bleiben gleich: didn\'t go, Did you see…?', examples:['We went to Edinburgh last year.','I saw a great film yesterday.','She had breakfast at 7.'], translations:['Wir fuhren mit dem Zug.','Ich sah das Museum.','Er kaufte ein Souvenir.','Sie kam spät an.'] },
+    { id:'m6u5', type:'dialog', title:'Im Hotel ein Problem melden', scenario:'Dein Zimmer hat ein Problem – du gehst zur Rezeption.', role:'Emma', sceneDE:'Du bist im Hotel und dein Zimmer hat kein heißes Wasser. Emma ist an der Rezeption.' },
+    { id:'m6u6', type:'vokabeln', title:'Wetter & Unterkunft', vocab:[
+      {de:'Es regnet / Es schneit',en:'It\'s raining / It\'s snowing',hint:'immer mit It\'s'},
+      {de:'Sonnig / Bewölkt',en:'Sunny / Cloudy',hint:''},
+      {de:'Warm / Kalt',en:'Warm / Cold',hint:''},
+      {de:'Einzelzimmer / Doppelzimmer',en:'Single room / Double room',hint:''},
+      {de:'Frühstück inklusive',en:'Breakfast included',hint:''},
+    ]},
+    { id:'m6u7', type:'schreiben', title:'Reisebericht', aufgabe:'Schreib 4–6 Sätze über eine Reise (echte oder erfundene). Benutze Simple Past: Where did you go? What did you see? What did you eat?' },
+    { id:'m6u8', type:'kurztest', title:'Modul-Test: Reisen', questions: lpBuildTest('m6') },
+  ]},
+  { id:'m7', level:'A2', title:'Gefühle & Meinungen', desc:'Gefühle, Ratschläge, Present Perfect', units:[
+    { id:'m7u1', type:'vokabeln', title:'Gefühle & Meinungen', vocab:[
+      {de:'Glücklich / Traurig',en:'Happy / Sad',hint:''},
+      {de:'Müde / Gestresst',en:'Tired / Stressed',hint:''},
+      {de:'Aufgeregt',en:'Excited',hint:'KEIN „exciting" für Personen'},
+      {de:'Ich glaube / Ich denke',en:'I think / I believe',hint:''},
+      {de:'Meiner Meinung nach',en:'In my opinion',hint:''},
+      {de:'Weil',en:'Because',hint:'Wortstellung normal in EN'},
+      {de:'Ich stimme zu / nicht zu',en:'I agree / I disagree',hint:''},
+    ]},
+    { id:'m7u2', type:'grammatik', title:'should / shouldn\'t', rule:'„Should" gibt einen Rat oder eine Empfehlung: You should drink more water. Verneinung: shouldn\'t. Kein -s bei he/she/it! Im Deutschen: „du solltest" – aber Vorsicht: should ist milder als must. Es drückt Empfehlungen aus, keine Pflichten.', examples:['You should see a doctor.','She shouldn\'t eat so much sugar.','We should leave early.'], translations:['Du solltest mehr schlafen.','Er sollte nicht so viel arbeiten.','Wir sollten früher gehen.','Sie sollte das ausprobieren.'] },
+    { id:'m7u3', type:'dialog', title:'Über ein Problem sprechen', scenario:'Du hast ein kleines Problem und besprichst es mit Emma.', role:'Emma', sceneDE:'Emma fragt, wie es dir geht. Du erzählst ihr von einem Problem, das dich beschäftigt.' },
+    { id:'m7u4', type:'grammatik', title:'Present Perfect: Einführung', rule:'Present Perfect = have/has + past participle. Man benutzt es für Erfahrungen (I have been to London), oder für Handlungen, die Auswirkungen auf die Gegenwart haben. Im Deutschen gibt es auch das Perfekt – aber im Englischen wird es oft anders eingesetzt. Schlüsselwörter: ever, never, already, yet.', examples:['I have visited Paris.','She has never eaten sushi.','Have you ever been to Scotland?'], translations:['Ich habe London schon mal besucht.','Er hat das nie gemacht.','Hast du jemals Englisch gesprochen?','Wir haben das schon erledigt.'] },
+    { id:'m7u5', type:'dialog', title:'Ratschlag geben und nehmen', scenario:'Dein Freund hat ein Problem und fragt dich um Rat.', role:'Emma', sceneDE:'Emma hat ein Problem mit ihrem Nachbarn und fragt dich um Rat.' },
+    { id:'m7u6', type:'vokabeln', title:'Verstärker & nützliche Phrasen', vocab:[
+      {de:'Sehr / Wirklich',en:'Very / Really',hint:'„Really" ist umgangssprachlicher'},
+      {de:'Ein bisschen',en:'A bit / A little',hint:''},
+      {de:'Überhaupt nicht',en:'Not at all',hint:'auch als höfliches „Bitte"'},
+      {de:'Das klingt gut!',en:'That sounds great!',hint:''},
+      {de:'Was meinst du?',en:'What do you think?',hint:''},
+    ]},
+    { id:'m7u7', type:'schreiben', title:'Eine Empfehlung schreiben', aufgabe:'Empfiehl einen Film, ein Restaurant oder ein Buch auf Englisch. Schreib 4–5 Sätze. Warum magst du es? Was sollte man darüber wissen?' },
+    { id:'m7u8', type:'kurztest', title:'Modul-Test: Gefühle & Meinungen', questions: lpBuildTest('m7') },
+  ]},
+  { id:'m8', level:'B1', title:'Am Telefon & Digital', desc:'Anrufe, Missverständnisse, formell vs. informell', units:[
+    { id:'m8u1', type:'vokabeln', title:'Telefon & Kommunikation', vocab:[
+      {de:'Anrufen',en:'To call / To phone',hint:''},
+      {de:'Nachricht hinterlassen',en:'To leave a message',hint:''},
+      {de:'Verbinden',en:'To put through',hint:'„I\'ll put you through"'},
+      {de:'Besetzt',en:'Engaged / Busy',hint:'GB: engaged; USA: busy'},
+      {de:'Auflegen',en:'To hang up',hint:''},
+      {de:'Rückruf',en:'Callback / To call back',hint:''},
+      {de:'Betreff',en:'Subject',hint:'in E-Mails'},
+      {de:'Im Anhang',en:'Attached / In the attachment',hint:'„Please find attached"'},
+    ]},
+    { id:'m8u2', type:'grammatik', title:'Passiv: Einführung', rule:'Passiv: be + past participle. Fokus liegt auf der Handlung, nicht auf der Person. Präsens: The letter is written. Vergangenheit: The bridge was built in 1900. Im Deutschen nutzt man es ähnlich – der Unterschied: Im Englischen braucht man immer ein Subjekt (z.B. It).', examples:['English is spoken all over the world.','The email was sent yesterday.','Mistakes are made by everyone.'], translations:['Das Paket wird geliefert.','Das Hotel wurde 1920 gebaut.','Die Nachricht wurde abgeschickt.','Fehler werden gemacht.'] },
+    { id:'m8u3', type:'dialog', title:'Einen Telefonanruf machen', scenario:'Du rufst bei einer Firma an und fragst nach Informationen.', role:'Emma', sceneDE:'Du rufst bei einem englischen Unternehmen an. Emma nimmt das Gespräch entgegen.' },
+    { id:'m8u4', type:'dialog', title:'Missverständnis klären', scenario:'Es gab ein Missverständnis – du erklärst es höflich.', role:'Emma', sceneDE:'Emma glaubt, du hast einen Termin mit ihr abgesagt. Du musst das Missverständnis aufklären.' },
+    { id:'m8u5', type:'grammatik', title:'could / would – höfliche Anfragen', rule:'„Could" und „would" machen Anfragen höflicher als „can" und „will". Could you help me? klingt höflicher als Can you help me? Would you like…? ist sehr formell. Im Deutschen: „Könnten Sie…?" / „Würden Sie…?" – genauso funktioniert es im Englischen.', examples:['Could you please repeat that?','Would you like some tea?','I would appreciate your help.'], translations:['Könnten Sie das bitte wiederholen?','Würden Sie bitte warten?','Ich wäre dankbar für Ihre Hilfe.','Könntest du mir das schicken?'] },
+    { id:'m8u6', type:'schreiben', title:'Formelle E-Mail', aufgabe:'Schreib eine formelle E-Mail auf Englisch: Du möchtest dich über ein kaputtes Produkt beschweren, das du online bestellt hast. Benutze: Dear Sir/Madam, I am writing to…, I would appreciate…, Yours faithfully,' },
+    { id:'m8u7', type:'grammatik', title:'Reported Speech: Einführung', rule:'Reported Speech = indirekte Rede. She said: „I am tired" → She said that she was tired. Das Verb rückt eine Zeitstufe zurück: am→was, is→was, can→could, will→would. Im Deutschen funktioniert das ähnlich mit Konjunktiv, im Englischen verschiebt man einfach die Tempusform.', examples:['He said that he was busy.','She told me she couldn\'t come.','They said they had finished.'], translations:['Er sagte, er sei müde.','Sie sagte, sie könne nicht kommen.','Sie sagten, sie seien fertig.','Er erklärte, er habe die E-Mail geschickt.'] },
+    { id:'m8u8', type:'vokabeln', title:'Digitale Kommunikation', vocab:[
+      {de:'Passwort zurücksetzen',en:'To reset the password',hint:''},
+      {de:'Datei hochladen',en:'To upload a file',hint:''},
+      {de:'Videokonferenz',en:'Video call / Video conference',hint:''},
+      {de:'Bildschirm teilen',en:'To share the screen',hint:''},
+      {de:'Stummschalten',en:'To mute',hint:'„You\'re on mute!"'},
+    ]},
+    { id:'m8u9', type:'schreiben', title:'Informell vs. Formell', aufgabe:'Schreib dieselbe Nachricht zweimal: Einmal als informelle SMS an einen Freund, einmal als formelle E-Mail. Thema: Du kannst morgen nicht zum vereinbarten Treffen kommen.' },
+    { id:'m8u10', type:'kurztest', title:'Modul-Test: Am Telefon & Digital', questions: lpBuildTest('m8') },
+  ]},
+  { id:'m9', level:'B1', title:'Arbeitswelt Englisch', desc:'Meetings, Präsentationen, Bewerbung', units:[
+    { id:'m9u1', type:'vokabeln', title:'Business & Büro', vocab:[
+      {de:'Besprechung / Meeting',en:'Meeting',hint:'auch: conference'},
+      {de:'Tagesordnung',en:'Agenda',hint:'[əˈdʒɛndə]'},
+      {de:'Termin',en:'Appointment / Deadline',hint:'Deadline = Frist'},
+      {de:'Präsentation',en:'Presentation',hint:'to give a presentation'},
+      {de:'Bewerbung',en:'Application',hint:'to apply for a job'},
+      {de:'Lebenslauf',en:'CV / Resume',hint:'GB: CV, USA: Resume'},
+      {de:'Vorstellungsgespräch',en:'Job interview',hint:''},
+      {de:'Gehaltserhöhung',en:'Pay rise / Raise',hint:'GB: pay rise, USA: raise'},
+    ]},
+    { id:'m9u2', type:'grammatik', title:'Future: will vs. going to vs. Present Continuous', rule:'Drei Möglichkeiten für die Zukunft: 1) will = spontan/Versprechen (I\'ll call you). 2) going to = geplante Absicht (I\'m going to attend the meeting). 3) Present Continuous = fester Termin (I\'m meeting the client at 3). Auf Deutsch alles oft mit „werden" – Englisch unterscheidet genau!', examples:['I\'ll send the report today.','She\'s going to present her project.','We\'re meeting the CEO tomorrow.'], translations:['Ich schicke dir das sofort (spontan).','Er plant, sich zu bewerben.','Wir haben morgen ein Meeting (geplant).','Ich werde helfen (Versprechen).'] },
+    { id:'m9u3', type:'dialog', title:'Meinung im Meeting äußern', scenario:'Du bist in einem Business-Meeting und äußerst deine Meinung zu einem Vorschlag.', role:'Emma', sceneDE:'Du nimmst an einem Teammeeting teil. Emma leitet es und fragt nach deiner Meinung.' },
+    { id:'m9u4', type:'grammatik', title:'Conditional Typ 1: If I…, I will…', rule:'Typ 1 Conditional = reale Möglichkeit in der Zukunft. Aufbau: If + Simple Present, will + Infinitiv. If it rains, I will stay home. Die Reihenfolge kann auch umgekehrt werden: I will stay home if it rains. Im Deutschen: „Wenn es regnet, werde ich zu Hause bleiben" – fast identisch!', examples:['If I finish early, I\'ll join the meeting.','She\'ll succeed if she works hard.','If you have questions, please ask.'], translations:['Wenn ich Zeit habe, werde ich anrufen.','Wenn es nicht klappt, versuchen wir es erneut.','Ruf mich an, wenn du Hilfe brauchst.','Wenn du früh kommst, bekommst du einen guten Platz.'] },
+    { id:'m9u5', type:'dialog', title:'Bewerbungsgespräch', scenario:'Du bist in einem Vorstellungsgespräch in einem englischsprachigen Unternehmen.', role:'Emma', sceneDE:'Emma führt dein Bewerbungsgespräch für eine Stelle, die du interessant findest.' },
+    { id:'m9u6', type:'grammatik', title:'Phrasal Verbs im Business', rule:'Phrasal Verbs sind Verb + Präposition mit eigenem Bedeutung. Wichtige Business-Phrasal Verbs: set up (einrichten/gründen), follow up (nachfassen), hand in (einreichen), carry out (durchführen), put off (verschieben), bring up (ansprechen), go over (durchgehen). Im Deutschen gibt es Entsprechungen, aber die wörtliche Übersetzung ergibt oft keinen Sinn!', examples:['Let\'s set up a meeting for Thursday.','I\'ll follow up with an email.','Please hand in your report by Friday.'], translations:['Lass uns ein Meeting ansetzen.','Ich werde nachfassen.','Bitte gib deinen Bericht ab.','Wir haben das Projekt durchgeführt.'] },
+    { id:'m9u7', type:'schreiben', title:'Bewerbungsanschreiben', aufgabe:'Schreib ein kurzes Bewerbungsanschreiben auf Englisch (~80 Wörter). Du bewirbst dich für eine Stelle, die dich interessiert. Nutze: Dear Hiring Manager, I am writing to apply for…, I have experience in…, I look forward to hearing from you.' },
+    { id:'m9u8', type:'dialog', title:'Präsentation beginnen', scenario:'Du hältst den Einstieg einer kurzen Präsentation.', role:'Emma', sceneDE:'Du hast 3 Minuten, um den Beginn einer Präsentation zu üben. Emma ist dein Publikum.' },
+    { id:'m9u9', type:'schreiben', title:'Meeting-Zusammenfassung', aufgabe:'Schreib eine kurze Meeting-Zusammenfassung auf Englisch (3–5 Sätze). Was wurde besprochen? Was sind die nächsten Schritte? Benutze: We discussed…, It was agreed that…, The next step is to…' },
+    { id:'m9u10', type:'kurztest', title:'Modul-Test: Arbeitswelt Englisch', questions: lpBuildTest('m9') },
+  ]},
+  { id:'m10', level:'B1', title:'Aktuelle Themen & Diskussion', desc:'Nachrichten, Argumentation, Debatte', units:[
+    { id:'m10u1', type:'vokabeln', title:'Gesellschaft & Medien', vocab:[
+      {de:'Nachrichten',en:'News',hint:'immer Plural in EN'},
+      {de:'Zeitung',en:'Newspaper',hint:''},
+      {de:'Umwelt',en:'Environment',hint:'[ɪnˈvaɪrənmənt]'},
+      {de:'Gesellschaft',en:'Society',hint:''},
+      {de:'Meinung',en:'Opinion',hint:'in my opinion'},
+      {de:'Argument',en:'Argument',hint:''},
+      {de:'Debatte',en:'Debate',hint:''},
+      {de:'Lösung',en:'Solution',hint:''},
+    ]},
+    { id:'m10u2', type:'grammatik', title:'Conditional Typ 2: If I were…', rule:'Typ 2 = hypothetische/unwahrscheinliche Situation: If I were rich, I would travel more. Aufbau: If + Simple Past, would + Infinitiv. Wichtig: Bei „to be" immer „were" (nicht „was"), auch bei I/he/she/it. Im Deutschen: „Wenn ich reich wäre, würde ich mehr reisen" – fast identisch, außer dem „were"!', examples:['If I were the president, I would change many things.','She would learn English faster if she practised daily.','If we had more time, we\'d visit more places.'], translations:['Wenn ich jünger wäre, würde ich mehr Sport treiben.','Wenn sie mehr Zeit hätte, würde sie mehr lesen.','Wenn ich du wäre, würde ich das nicht tun.','Wenn wir in London lebten, würden wir das Museum besuchen.'] },
+    { id:'m10u3', type:'dialog', title:'Für und Gegen diskutieren', scenario:'Du diskutierst mit Emma über ein aktuelles Thema.', role:'Emma', sceneDE:'Emma möchte deine Meinung zu einem aktuellen Thema hören. Ihr diskutiert höflich.' },
+    { id:'m10u4', type:'grammatik', title:'Linking words', rule:'Linking words verbinden Ideen: however (jedoch/aber), although (obwohl), despite (trotz), in addition (außerdem), therefore (deshalb), on the other hand (andererseits), for example (zum Beispiel). Sie machen deinen Text flüssiger und strukturierter – wichtig für Schreiben und Sprechen!', examples:['I like London. However, it is very expensive.','Although it was raining, we went for a walk.','In addition to English, she speaks French.'], translations:['Es war kalt. Trotzdem gingen wir spazieren.','Obwohl es spät war, arbeitete er weiter.','Außerdem hat sie Erfahrung in diesem Bereich.','Deshalb habe ich das entschieden.'] },
+    { id:'m10u5', type:'dialog', title:'Höflich widersprechen', scenario:'Du widersprichst höflich einer Aussage von Emma.', role:'Emma', sceneDE:'Emma macht eine Aussage, mit der du nicht ganz einverstanden bist. Widersprich höflich.' },
+    { id:'m10u6', type:'grammatik', title:'Passiv Vergangenheit', rule:'Passiv Vergangenheit: was/were + past participle. The book was written in 1850. They were told about the changes. Im Deutschen: „Das Buch wurde 1850 geschrieben." – sehr ähnlich. Tipp: Was = Singular, Were = Plural.', examples:['The bridge was built in 1900.','The documents were signed yesterday.','He was informed about the decision.'], translations:['Das Gebäude wurde renoviert.','Die Dokumente wurden abgeschickt.','Die Entscheidung wurde getroffen.','Sie wurden über die Änderungen informiert.'] },
+    { id:'m10u7', type:'schreiben', title:'Kurzessay: Meinung', aufgabe:'Schreib einen Kurzessay (~100 Wörter) auf Englisch. Thema: Sollten alle Menschen eine Fremdsprache lernen? Nutze: In my opinion…, However…, In addition…, Therefore…' },
+    { id:'m10u8', type:'dialog', title:'Eigene Meinung verteidigen', scenario:'Du verteidigst deine Meinung gegenüber Gegenargumenten.', role:'Emma', sceneDE:'Du hast eine Meinung geäußert. Emma bringt Gegenargumente – verteidige deine Position.' },
+    { id:'m10u9', type:'schreiben', title:'Leserbrief', aufgabe:'Schreib einen formellen Leserbrief auf Englisch (~80 Wörter) zu einem Thema, das dich interessiert. Nutze: Dear Editor, I am writing with regard to…, I strongly believe…, I would urge…, Yours sincerely,' },
+    { id:'m10u10', type:'vokabeln', title:'Argumentation & Diskussion', vocab:[
+      {de:'Ich stimme zu / nicht zu',en:'I agree / I disagree',hint:''},
+      {de:'Das stimmt, aber…',en:'That\'s true, but…',hint:'sehr nützlich'},
+      {de:'Einerseits / Andererseits',en:'On one hand / On the other hand',hint:''},
+      {de:'Zum Beispiel',en:'For example / For instance',hint:''},
+      {de:'Das führt zu…',en:'This leads to…',hint:''},
+      {de:'Zusammenfassend',en:'In conclusion / To sum up',hint:''},
+    ]},
+    { id:'m10u11', type:'kurztest', title:'Modul-Test: Aktuelle Themen', questions: lpBuildTest('m10') },
+    { id:'m10u12', type:'abschlusstest', title:'🏆 Abschlusstest B1', questions: lpBuildTest('m10', true) },
+  ]},
+];
+
+// Einstufungstest-Fragen (statisch, kein API)
+const LP_PLACEMENT_QUESTIONS = [
+  { q:'„Ich bin müde." – Wie heißt das auf Englisch?', opts:['I am tired.','I is tired.','I be tired.','Me tired.'], ans:0, level:'A1' },
+  { q:'Welcher Satz ist richtig?', opts:['She have a dog.','She has a dog.','She haves a dog.','She is have a dog.'], ans:1, level:'A1' },
+  { q:'Wie sagt man „Gibt es ein Hotel hier?"', opts:['Is there a hotel here?','There is hotel here?','Have a hotel here?','There hotel here?'], ans:0, level:'A1' },
+  { q:'„Ich ging gestern ins Kino." – Simple Past?', opts:['I go to the cinema yesterday.','I goes to the cinema yesterday.','I went to the cinema yesterday.','I gone to the cinema yesterday.'], ans:2, level:'A2' },
+  { q:'Was ist richtig: can oder cans?', opts:['She cans swim.','She can swims.','She can swim.','She can swimming.'], ans:2, level:'A2' },
+  { q:'Welches Adjektiv ist korrekt gesteigert?', opts:['more good','gooder','better','more better'], ans:2, level:'A2' },
+  { q:'Present Perfect: Was ist korrekt?', opts:['I have never been to London.','I have never go to London.','I never have been to London.','I had never been to London.'], ans:0, level:'B1' },
+  { q:'Passiv: „Das Buch wurde geschrieben."', opts:['The book wrote.','The book was written.','The book is wrote.','The book has written.'], ans:1, level:'B1' },
+  { q:'Conditional Typ 2: „Wenn ich du wäre, würde ich das machen."', opts:['If I am you, I will do it.','If I was you, I would do it.','If I were you, I would do it.','If I were you, I will do it.'], ans:2, level:'B1' },
+  { q:'Welcher Satz klingt am natürlichsten auf Englisch?', opts:['I\'m going to the meeting tomorrow at 3.','I will go to the meeting tomorrow at 3.','I go to the meeting tomorrow at 3.','I gone to the meeting tomorrow at 3.'], ans:0, level:'B1' },
+];
+
+// ── Fortschritt-Speicher ───────────────────────────────────────────────
+function lpGetProgress() {
+  try { return JSON.parse(localStorage.getItem('headway_lernpfad') || '{}'); } catch(e) { return {}; }
+}
+function lpSaveProgress(p) {
+  try { localStorage.setItem('headway_lernpfad', JSON.stringify(p)); } catch(e) {}
+}
+function lpIsUnitDone(unitId) {
+  return (lpGetProgress().completedUnits || []).includes(unitId);
+}
+function lpMarkUnitDone(unitId) {
+  const p = lpGetProgress();
+  if (!p.completedUnits) p.completedUnits = [];
+  if (!p.completedUnits.includes(unitId)) p.completedUnits.push(unitId);
+  lpSaveProgress(p);
+}
+function lpGetLastModus() {
+  return lpGetProgress().lastModus || 'normal';
+}
+function lpSetLastModus(m) {
+  const p = lpGetProgress(); p.lastModus = m; lpSaveProgress(p);
+}
+function lpGetStartModule() {
+  return lpGetProgress().startModule || 'm1';
+}
+
+// Dummy-Testfragen-Builder (gibt Platzhalter zurück – echte Fragen kommen per KI)
+function lpBuildTest(moduleId, isAbschluss) {
+  return { moduleId, isAbschluss: !!isAbschluss };
+}
+
+// ── State ──────────────────────────────────────────────────────────────
+let lpCurrentModule = null;
+let lpCurrentUnit   = null;
+let lpCurrentStep   = 0;
+let lpModus         = 'normal';
+let lpSteps         = [];
+let lpUserAnswers   = {};
+let lpPlacementStep = 0;
+let lpPlacementAnswers = [];
+
+// ── Init ───────────────────────────────────────────────────────────────
+function lpInit() {
+  document.getElementById('lpLoading').style.display = 'none';
+  const p = lpGetProgress();
+  if (!p.placed && !p.startModule) {
+    lpShowPlacementTest();
+  } else {
+    lpShowOverview();
+  }
+}
+
+// ── Einstufungstest ────────────────────────────────────────────────────
+function lpShowPlacementTest() {
+  document.getElementById('lpPlacementTest').style.display = 'block';
+  document.getElementById('lpMain').style.display = 'none';
+  lpPlacementStep = 0;
+  lpPlacementAnswers = [];
+  lpRenderPlacementQuestion();
+}
+function lpRenderPlacementQuestion() {
+  const q = LP_PLACEMENT_QUESTIONS[lpPlacementStep];
+  const total = LP_PLACEMENT_QUESTIONS.length;
+  const el = document.getElementById('lpTestBody');
+  el.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:12px;">Frage ${lpPlacementStep+1} von ${total}</div>
+    <div style="height:4px;background:var(--border);border-radius:2px;margin-bottom:16px;">
+      <div style="height:4px;background:var(--blue);border-radius:2px;width:${((lpPlacementStep)/total*100)}%"></div>
+    </div>
+    <div style="font-weight:600;margin-bottom:16px;line-height:1.5;">${q.q}</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${q.opts.map((o,i)=>`
+        <button onclick="lpSelectPlacementOpt(${i},this)" style="text-align:left;padding:12px 16px;border:2px solid var(--border);border-radius:10px;background:var(--card-bg);cursor:pointer;font-size:0.9rem;transition:border-color 0.15s;" id="lpPOpt${i}">${o}</button>
+      `).join('')}
+    </div>
+  `;
+  document.getElementById('lpTestPrevBtn').style.display = lpPlacementStep > 0 ? 'inline-flex' : 'none';
+  document.getElementById('lpTestNextBtn').textContent = lpPlacementStep === total-1 ? 'Ergebnis anzeigen →' : 'Weiter →';
+  document.getElementById('lpTestNextBtn').disabled = lpPlacementAnswers[lpPlacementStep] === undefined;
+}
+function lpSelectPlacementOpt(i, btn) {
+  document.querySelectorAll('[id^=lpPOpt]').forEach(b => {
+    b.style.borderColor = 'var(--border)';
+    b.style.background = 'var(--card-bg)';
+  });
+  btn.style.borderColor = 'var(--blue)';
+  btn.style.background = 'rgba(27,94,166,0.08)';
+  lpPlacementAnswers[lpPlacementStep] = i;
+  document.getElementById('lpTestNextBtn').disabled = false;
+}
+function lpTestNext() {
+  if (lpPlacementAnswers[lpPlacementStep] === undefined) return;
+  if (lpPlacementStep < LP_PLACEMENT_QUESTIONS.length - 1) {
+    lpPlacementStep++;
+    lpRenderPlacementQuestion();
+  } else {
+    lpFinishPlacementTest();
+  }
+}
+function lpTestPrev() {
+  if (lpPlacementStep > 0) { lpPlacementStep--; lpRenderPlacementQuestion(); }
+}
+function lpFinishPlacementTest() {
+  let correct = 0;
+  lpPlacementAnswers.forEach((ans, i) => { if (ans === LP_PLACEMENT_QUESTIONS[i].ans) correct++; });
+  let startMod;
+  if (correct <= 3) startMod = 'm1';
+  else if (correct <= 6) startMod = 'm4';
+  else startMod = 'm8';
+
+  const p = lpGetProgress();
+  p.placed = true;
+  p.startModule = startMod;
+  p.placementScore = correct;
+  lpSaveProgress(p);
+
+  const modTitle = LP_MODULES.find(m=>m.id===startMod)?.title || '';
+  const el = document.getElementById('lpTestBody');
+  el.innerHTML = `
+    <div style="text-align:center;padding:20px 0;">
+      <div style="font-size:2.5rem;margin-bottom:12px;">🎯</div>
+      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;">${correct} von 10 richtig</div>
+      <div style="color:var(--muted);margin-bottom:20px;font-size:0.9rem;">
+        ${correct <= 3 ? 'Guter Start! Wir beginnen mit den Grundlagen.' : correct <= 6 ? 'Solide Basis! Du startest auf A2-Niveau.' : 'Sehr gut! Du startest direkt auf B1-Niveau.'}
+      </div>
+      <div style="background:rgba(27,94,166,0.08);border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:0.85rem;color:var(--muted);">Dein Startpunkt:</div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--blue);margin-top:4px;">Modul: ${modTitle}</div>
+      </div>
+      <button class="btn btn-primary" onclick="lpShowOverview()" style="width:100%;">Lernpfad starten →</button>
+    </div>
+  `;
+  document.getElementById('lpTestNextBtn').style.display = 'none';
+  document.getElementById('lpTestPrevBtn').style.display = 'none';
+}
+
+// ── Übersicht ──────────────────────────────────────────────────────────
+function lpShowOverview() {
+  document.getElementById('lpPlacementTest').style.display = 'none';
+  document.getElementById('lpMain').style.display = 'block';
+  document.getElementById('lpOverview').style.display = 'block';
+  document.getElementById('lpUnitView').style.display = 'none';
+  document.getElementById('lpLesson').style.display = 'none';
+
+  const p = lpGetProgress();
+  const done = (p.completedUnits || []).length;
+  const total = LP_MODULES.reduce((s,m)=>s+m.units.length,0);
+  document.getElementById('lpProgressSummary').textContent = `${done} von ${total} Einheiten abgeschlossen`;
+
+  const startMod = p.startModule || 'm1';
+  const list = document.getElementById('lpModuleList');
+  list.innerHTML = LP_MODULES.map(mod => {
+    const modDone = mod.units.filter(u=>lpIsUnitDone(u.id)).length;
+    const modTotal = mod.units.length;
+    const pct = Math.round(modDone/modTotal*100);
+    const locked = LP_MODULES.indexOf(mod) > 0 && LP_MODULES.indexOf(mod) < LP_MODULES.findIndex(m=>m.id===startMod);
+    const badge = p.badges && p.badges[mod.id];
+    return `
+      <div onclick="${locked ? '' : `lpShowUnitView('${mod.id}')`}"
+           style="background:var(--card-bg);border-radius:14px;padding:16px;margin-bottom:12px;cursor:${locked?'default':'pointer'};opacity:${locked?0.45:1};border:1px solid var(--border);transition:box-shadow 0.15s;"
+           onmouseover="if(!${locked}) this.style.boxShadow='0 2px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <span style="font-size:0.7rem;font-weight:700;color:${mod.level==='A1'?'#2e7d32':mod.level==='A2'?'#1565c0':'#6a1b9a'};background:${mod.level==='A1'?'rgba(46,125,50,0.1)':mod.level==='A2'?'rgba(21,101,192,0.1)':'rgba(106,27,154,0.1)'};padding:2px 8px;border-radius:8px;margin-right:8px;">${mod.level}</span>
+            <strong style="font-size:0.95rem;">${mod.title}</strong>
+            ${badge ? `<span style="margin-left:6px;font-size:0.8rem;">⭐</span>` : ''}
+          </div>
+          <div style="font-size:0.8rem;color:var(--muted);">${modDone}/${modTotal}</div>
+        </div>
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">${mod.desc}</div>
+        <div style="height:4px;background:var(--border);border-radius:2px;">
+          <div style="height:4px;background:${pct===100?'#2e7d32':'var(--blue)'};border-radius:2px;width:${pct}%;transition:width 0.4s;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Einheiten eines Moduls ─────────────────────────────────────────────
+function lpShowUnitView(moduleId) {
+  lpCurrentModule = LP_MODULES.find(m=>m.id===moduleId);
+  document.getElementById('lpOverview').style.display = 'none';
+  document.getElementById('lpUnitView').style.display = 'block';
+  document.getElementById('lpUnitViewTitle').textContent = lpCurrentModule.title;
+
+  const typeIcon = { vokabeln:'📖', grammatik:'📐', dialog:'💬', schreiben:'✍️', kurztest:'🎯', abschlusstest:'🏆' };
+  const list = document.getElementById('lpUnitList');
+  list.innerHTML = lpCurrentModule.units.map((u,i) => {
+    const done = lpIsUnitDone(u.id);
+    return `
+      <div onclick="lpOpenLesson('${u.id}')"
+           style="display:flex;align-items:center;gap:14px;background:var(--card-bg);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);">
+        <div style="font-size:1.4rem;width:36px;text-align:center;">${done?'✅':typeIcon[u.type]||'📌'}</div>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:0.9rem;">${u.title}</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;">${{vokabeln:'Vokabeln',grammatik:'Grammatik',dialog:'Dialog',schreiben:'Schreiben',kurztest:'Kurztest',abschlusstest:'Abschlusstest'}[u.type]}</div>
+        </div>
+        <div style="font-size:0.8rem;color:var(--muted);">→</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Lektion öffnen ─────────────────────────────────────────────────────
+function lpOpenLesson(unitId) {
+  lpCurrentUnit = null;
+  for (const m of LP_MODULES) {
+    const u = m.units.find(u=>u.id===unitId);
+    if (u) { lpCurrentUnit = u; lpCurrentModule = m; break; }
+  }
+  if (!lpCurrentUnit) return;
+
+  document.getElementById('lpUnitView').style.display = 'none';
+  document.getElementById('lpLesson').style.display = 'block';
+  document.getElementById('lpLessonBreadcrumb').textContent = `${lpCurrentModule.title} › ${lpCurrentUnit.title}`;
+  document.getElementById('lpModeSelect').style.display = 'block';
+  document.getElementById('lpStepProgress').style.display = 'none';
+  document.getElementById('lpStepContent').innerHTML = '';
+  document.getElementById('lpStepNav').style.display = 'none';
+  lpModus = lpGetLastModus();
+}
+
+function lpStartWithMode(modus) {
+  lpModus = modus;
+  lpSetLastModus(modus);
+  document.getElementById('lpModeSelect').style.display = 'none';
+  document.getElementById('lpStepProgress').style.display = 'block';
+  document.getElementById('lpStepNav').style.display = 'flex';
+  lpCurrentStep = 0;
+  lpUserAnswers = {};
+  lpBuildSteps();
+  lpRenderStep();
+}
+
+function lpBuildSteps() {
+  const u = lpCurrentUnit;
+  lpSteps = [];
+  const schnell = lpModus === 'schnell';
+  const ausfuehrlich = lpModus === 'ausfuehrlich';
+
+  if (u.type === 'vokabeln') {
+    lpSteps.push({ type:'vocab_cards', label:'Vokabeln kennenlernen' });
+    if (!schnell) lpSteps.push({ type:'vocab_explain', label:'KI erklärt' });
+    lpSteps.push({ type:'vocab_gap', label:'Lückentest' });
+    if (!schnell) lpSteps.push({ type:'vocab_write', label:'Eigene Sätze' });
+    lpSteps.push({ type:'unit_done', label:'Abgeschlossen' });
+  } else if (u.type === 'grammatik') {
+    lpSteps.push({ type:'gram_explain', label:'Erklärung' });
+    if (!schnell) lpSteps.push({ type:'gram_examples', label:'Beispiele analysieren' });
+    lpSteps.push({ type:'gram_translate', label:'Übersetzungsübung' });
+    if (!schnell) lpSteps.push({ type:'gram_free', label:'Freie Übung' });
+    if (ausfuehrlich) lpSteps.push({ type:'gram_tip', label:'Merksatz' });
+    lpSteps.push({ type:'unit_done', label:'Abgeschlossen' });
+  } else if (u.type === 'dialog') {
+    if (ausfuehrlich) lpSteps.push({ type:'dialog_warmup', label:'Aufwärmen' });
+    lpSteps.push({ type:'dialog_chat', label:'Gespräch' });
+    lpSteps.push({ type:'dialog_feedback', label:'Auswertung' });
+    if (ausfuehrlich) lpSteps.push({ type:'dialog_questions', label:'Verständnisfragen' });
+    lpSteps.push({ type:'unit_done', label:'Abgeschlossen' });
+  } else if (u.type === 'schreiben') {
+    lpSteps.push({ type:'write_task', label:'Schreibaufgabe' });
+    lpSteps.push({ type:'write_feedback', label:'KI-Korrektur' });
+    if (!schnell) lpSteps.push({ type:'write_revise', label:'Nochmal schreiben' });
+    if (ausfuehrlich) lpSteps.push({ type:'write_tip', label:'Profi-Tipp' });
+    lpSteps.push({ type:'unit_done', label:'Abgeschlossen' });
+  } else if (u.type === 'kurztest' || u.type === 'abschlusstest') {
+    lpSteps.push({ type:'test_run', label:'Test' });
+    lpSteps.push({ type:'test_result', label:'Ergebnis' });
+  }
+}
+
+// ── Schritte rendern ───────────────────────────────────────────────────
+function lpRenderStep() {
+  const step = lpSteps[lpCurrentStep];
+  const total = lpSteps.length;
+  document.getElementById('lpStepLabel').textContent = `Schritt ${lpCurrentStep+1} von ${total}: ${step.label}`;
+  document.getElementById('lpStepBar').style.width = `${((lpCurrentStep+1)/total)*100}%`;
+  document.getElementById('lpPrevStepBtn').style.display = lpCurrentStep > 0 ? 'inline-flex' : 'none';
+  document.getElementById('lpNextStepBtn').textContent = lpCurrentStep === total-1 || step.type === 'unit_done' ? 'Fertig ✓' : 'Weiter →';
+
+  const content = document.getElementById('lpStepContent');
+  content.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">Wird geladen…</div>';
+
+  const u = lpCurrentUnit;
+  switch(step.type) {
+    case 'vocab_cards':       lpRenderVocabCards(content); break;
+    case 'vocab_explain':     lpRenderVocabExplain(content); break;
+    case 'vocab_gap':         lpRenderVocabGap(content); break;
+    case 'vocab_write':       lpRenderVocabWrite(content); break;
+    case 'gram_explain':      lpRenderGramExplain(content); break;
+    case 'gram_examples':     lpRenderGramExamples(content); break;
+    case 'gram_translate':    lpRenderGramTranslate(content); break;
+    case 'gram_free':         lpRenderGramFree(content); break;
+    case 'gram_tip':          lpRenderGramTip(content); break;
+    case 'dialog_warmup':     lpRenderDialogWarmup(content); break;
+    case 'dialog_chat':       lpRenderDialogChat(content); break;
+    case 'dialog_feedback':   lpRenderDialogFeedback(content); break;
+    case 'dialog_questions':  lpRenderDialogQuestions(content); break;
+    case 'write_task':        lpRenderWriteTask(content); break;
+    case 'write_feedback':    lpRenderWriteFeedback(content); break;
+    case 'write_revise':      lpRenderWriteRevise(content); break;
+    case 'write_tip':         lpRenderWriteTip(content); break;
+    case 'test_run':          lpRenderTestRun(content); break;
+    case 'test_result':       lpRenderTestResult(content); break;
+    case 'unit_done':         lpRenderUnitDone(content); break;
+  }
+}
+
+function lpNextStep() {
+  const step = lpSteps[lpCurrentStep];
+  if (step.type === 'unit_done') { lpExitLesson(); return; }
+  if (step.type === 'test_result') { lpExitLesson(); return; }
+  if (lpCurrentStep < lpSteps.length - 1) {
+    lpCurrentStep++;
+    lpRenderStep();
+  }
+}
+function lpPrevStep() {
+  if (lpCurrentStep > 0) { lpCurrentStep--; lpRenderStep(); }
+}
+function lpExitLesson() {
+  document.getElementById('lpLesson').style.display = 'none';
+  if (lpCurrentModule) {
+    lpShowUnitView(lpCurrentModule.id);
+  } else {
+    lpShowOverview();
+  }
+}
+
+// ── Step-Renderer: Vokabeln ────────────────────────────────────────────
+function lpRenderVocabCards(el) {
+  const vocab = lpCurrentUnit.vocab || [];
+  let idx = 0;
+  const render = () => {
+    const v = vocab[idx];
+    el.innerHTML = `
+      <div style="text-align:center;margin-bottom:12px;font-size:0.8rem;color:var(--muted);">${idx+1} / ${vocab.length}</div>
+      <div style="background:var(--blue);color:white;border-radius:16px;padding:32px 24px;text-align:center;margin-bottom:16px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:0.85rem;opacity:0.8;margin-bottom:8px;">Deutsch</div>
+        <div style="font-size:1.3rem;font-weight:700;">${v.de}</div>
+      </div>
+      <div style="background:var(--card-bg);border:2px solid var(--blue);border-radius:16px;padding:24px;text-align:center;margin-bottom:16px;">
+        <div style="font-size:0.85rem;color:var(--muted);margin-bottom:8px;">Englisch</div>
+        <div style="font-size:1.2rem;font-weight:700;color:var(--blue);">${v.en}</div>
+        ${v.hint ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:8px;">💡 ${v.hint}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button class="btn btn-ghost btn-sm" onclick="lpVocabPrev()" ${idx===0?'disabled':''}>← Zurück</button>
+        <button class="btn btn-primary btn-sm" onclick="lpVocabNext()">${idx===vocab.length-1?'Alle gesehen ✓':'Weiter →'}</button>
+      </div>
+    `;
+  };
+  window.lpVocabNext = () => { if (idx < vocab.length-1) { idx++; render(); } else { lpNextStep(); } };
+  window.lpVocabPrev = () => { if (idx > 0) { idx--; render(); } };
+  render();
+}
+
+function lpRenderVocabExplain(el) {
+  const vocab = lpCurrentUnit.vocab || [];
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI erklärt die Vokabeln…</div>';
+  const wordList = vocab.map(v=>`${v.de} = ${v.en}`).join(', ');
+  lpCallAI(
+    `Du bist ein Englischlehrer für deutschsprachige Erwachsene. Erkläre diese Vokabeln kurz und freundlich auf Deutsch. Für jede Vokabel: ein echter Beispielsatz auf Englisch + ein kurzer Tipp auf Deutsch wann man es benutzt. Vokabeln: ${wordList}. Halte jeden Eintrag kurz (2 Zeilen).`,
+    result => {
+      el.innerHTML = `<div style="line-height:1.8;font-size:0.9rem;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderVocabGap(el) {
+  const vocab = lpCurrentUnit.vocab || [];
+  const items = vocab.slice(0,5);
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:16px;">Füll die Lücken mit der richtigen englischen Vokabel:</div>
+    ${items.map((v,i)=>`
+      <div style="background:var(--card-bg);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid var(--border);">
+        <div style="font-size:0.85rem;margin-bottom:8px;">„${v.de}"</div>
+        <input type="text" id="lpGap${i}" placeholder="Englisch…" style="width:100%;font-size:0.95rem;" />
+      </div>
+    `).join('')}
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="lpCheckVocabGap(${JSON.stringify(items).replace(/"/g,'&quot;')})">Auswerten ✓</button>
+    <div id="lpGapResult" style="margin-top:16px;"></div>
+  `;
+}
+function lpCheckVocabGap(items) {
+  let correct = 0;
+  const res = items.map((v,i) => {
+    const inp = document.getElementById(`lpGap${i}`)?.value.trim().toLowerCase() || '';
+    const expected = v.en.toLowerCase().split('/')[0].trim();
+    const ok = inp && expected.includes(inp) || inp.includes(expected.split(' ')[0]);
+    if (ok) correct++;
+    const wrongNote = ok ? '' : `<span style="color:var(--muted);font-size:0.85rem;">(du: ${inp||'–'})</span>`;
+    return `<div style="padding:8px;border-radius:8px;margin-bottom:6px;background:${ok?'rgba(46,125,50,0.1)':'rgba(200,16,46,0.08)'}">
+      ${ok?'✅':'❌'} <strong>${v.de}</strong> → ${v.en} ${wrongNote}
+    </div>`;
+  });
+  document.getElementById('lpGapResult').innerHTML = `
+    <div style="font-weight:600;margin-bottom:10px;">${correct} von ${items.length} richtig!</div>
+    ${res.join('')}
+  `;
+}
+
+function lpRenderVocabWrite(el) {
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:16px;">Schreib 2 eigene Sätze auf Englisch mit den neuen Vokabeln:</div>
+    <textarea id="lpVocabWriteInput" placeholder="Schreib hier deine 2 Sätze…" style="width:100%;min-height:100px;font-size:0.9rem;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;"></textarea>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="lpSubmitVocabWrite()">Feedback holen →</button>
+    <div id="lpVocabWriteResult" style="margin-top:16px;"></div>
+  `;
+}
+function lpSubmitVocabWrite() {
+  const text = document.getElementById('lpVocabWriteInput')?.value.trim();
+  if (!text) return;
+  analysiereEingaben(text, 'lernpfad-vokabeln', lpCurrentModule?.id, 'vokabeln');
+  document.getElementById('lpVocabWriteResult').innerHTML = '<div style="color:var(--muted);">KI gibt Feedback…</div>';
+  const vocab = (lpCurrentUnit.vocab||[]).map(v=>v.en).join(', ');
+  lpCallAI(
+    `Du bist ein freundlicher Englischlehrer. Der Lernende hat 2 Sätze mit Vokabeln geschrieben. Gib kurzes, konstruktives Feedback auf Deutsch. Lob was gut ist, korrigiere Fehler mit Erklärung. Vokabeln des Kapitels: ${vocab}. Sätze des Lernenden: "${text}"`,
+    result => {
+      document.getElementById('lpVocabWriteResult').innerHTML = `<div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:14px;font-size:0.9rem;line-height:1.7;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+// ── Step-Renderer: Grammatik ───────────────────────────────────────────
+function lpRenderGramExplain(el) {
+  const u = lpCurrentUnit;
+  el.innerHTML = `
+    <div style="background:rgba(27,94,166,0.07);border-radius:12px;padding:20px;margin-bottom:16px;">
+      <div style="font-weight:700;margin-bottom:10px;">📐 ${u.title}</div>
+      <div style="font-size:0.9rem;line-height:1.8;">${u.rule || ''}</div>
+    </div>
+    <div style="font-size:0.85rem;color:var(--muted);">Beispiele:</div>
+    <div style="margin-top:8px;">
+      ${(u.examples||[]).map(ex=>`<div style="background:var(--card-bg);border-left:3px solid var(--blue);padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:8px;font-size:0.9rem;">✦ ${ex}</div>`).join('')}
+    </div>
+  `;
+}
+
+function lpRenderGramExamples(el) {
+  const u = lpCurrentUnit;
+  const exs = u.examples || [];
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:16px;">Erkläre auf Deutsch, warum diese Sätze so aufgebaut sind:</div>
+    ${exs.map((ex,i)=>`
+      <div style="background:var(--card-bg);border-radius:10px;padding:14px;margin-bottom:12px;border:1px solid var(--border);">
+        <div style="font-weight:600;margin-bottom:8px;">${ex}</div>
+        <textarea id="lpGramEx${i}" placeholder="Deine Erklärung auf Deutsch…" style="width:100%;min-height:60px;font-size:0.85rem;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;"></textarea>
+      </div>
+    `).join('')}
+    <button class="btn btn-primary" style="width:100%;" onclick="lpCheckGramExamples()">Feedback holen →</button>
+    <div id="lpGramExResult" style="margin-top:16px;"></div>
+  `;
+}
+function lpCheckGramExamples() {
+  const u = lpCurrentUnit;
+  const texts = u.examples.map((_,i)=>document.getElementById(`lpGramEx${i}`)?.value.trim()||'–').join('\n');
+  document.getElementById('lpGramExResult').innerHTML = '<div style="color:var(--muted);">KI gibt Feedback…</div>';
+  lpCallAI(
+    `Du bist ein Grammatiklehrer für Deutsch-Muttersprachler. Der Lernende hat erklärt, warum diese englischen Sätze so aufgebaut sind. Gib kurzes Feedback auf Deutsch. Gramatikregelthema: ${u.title}. Sätze: ${u.examples.join(' | ')}. Erklärungen des Lernenden: ${texts}`,
+    result => {
+      document.getElementById('lpGramExResult').innerHTML = `<div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:14px;font-size:0.9rem;line-height:1.7;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderGramTranslate(el) {
+  const u = lpCurrentUnit;
+  const items = u.translations || [];
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:16px;">Übersetze diese Sätze ins Englische:</div>
+    ${items.map((de,i)=>`
+      <div style="background:var(--card-bg);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid var(--border);">
+        <div style="font-size:0.85rem;margin-bottom:8px;font-weight:500;">🇩🇪 ${de}</div>
+        <input type="text" id="lpTrans${i}" placeholder="Englische Übersetzung…" style="width:100%;font-size:0.9rem;" />
+      </div>
+    `).join('')}
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="lpCheckTranslations()">Auswerten →</button>
+    <div id="lpTransResult" style="margin-top:16px;"></div>
+  `;
+}
+function lpCheckTranslations() {
+  const u = lpCurrentUnit;
+  const items = u.translations || [];
+  const answers = items.map((_,i)=>document.getElementById(`lpTrans${i}`)?.value.trim()||'–');
+  document.getElementById('lpTransResult').innerHTML = '<div style="color:var(--muted);">KI korrigiert…</div>';
+  lpCallAI(
+    `Du bist ein Englischlehrer. Korrigiere diese Übersetzungen auf Deutsch→Englisch. Thema: ${u.title}. Für jede falsche Antwort: zeige die korrekte Version und erkläre den Fehler auf Deutsch. Halte dich kurz. Originalsätze: ${items.join(' | ')}. Antworten des Lernenden: ${answers.join(' | ')}`,
+    result => {
+      document.getElementById('lpTransResult').innerHTML = `<div style="font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderGramFree(el) {
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:16px;">Schreib 2–3 eigene Sätze auf Englisch mit der gelernten Grammatikregel (${lpCurrentUnit.title}):</div>
+    <textarea id="lpGramFreeInput" placeholder="Deine Sätze…" style="width:100%;min-height:100px;font-size:0.9rem;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;"></textarea>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="lpSubmitGramFree()">Feedback →</button>
+    <div id="lpGramFreeResult" style="margin-top:16px;"></div>
+  `;
+}
+function lpSubmitGramFree() {
+  const text = document.getElementById('lpGramFreeInput')?.value.trim();
+  if (!text) return;
+  analysiereEingaben(text, 'lernpfad-grammatik', lpCurrentModule?.id, 'grammatik');
+  document.getElementById('lpGramFreeResult').innerHTML = '<div style="color:var(--muted);">KI analysiert…</div>';
+  lpCallAI(
+    `Du bist ein freundlicher Englischlehrer. Der Lernende hat Sätze mit der Grammatikregel "${lpCurrentUnit.title}" geschrieben. Analysiere die Sätze auf Deutsch. Lobe richtige Anwendung der Regel, korrigiere Fehler mit kurzer Erklärung. Sätze: "${text}"`,
+    result => {
+      document.getElementById('lpGramFreeResult').innerHTML = `<div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:14px;font-size:0.9rem;line-height:1.7;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderGramTip(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI erstellt Merksatz…</div>';
+  lpCallAI(
+    `Du bist Englischlehrer für Deutsch-Muttersprachler. Erstelle einen einprägsamen Merksatz oder eine Eselsbrücke auf Deutsch für die Grammatikregel: ${lpCurrentUnit.title}. Erkläre speziell den Unterschied zum Deutschen. Max. 3 Sätze.`,
+    result => {
+      el.innerHTML = `
+        <div style="background:rgba(27,94,166,0.1);border-radius:14px;padding:20px;text-align:center;">
+          <div style="font-size:1.5rem;margin-bottom:10px;">💡</div>
+          <div style="font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>
+        </div>
+      `;
+    }
+  );
+}
+
+// ── Step-Renderer: Dialog ──────────────────────────────────────────────
+let lpDialogHistory = [];
+let lpDialogDone = false;
+
+function lpRenderDialogWarmup(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI bereitet Aufwärmphrasen vor…</div>';
+  lpCallAI(
+    `Du bist Englischlehrer. Nenne 3 nützliche englische Sätze für dieses Szenario: "${lpCurrentUnit.scenario}". Format: Englischer Satz – Deutsche Erklärung, wann man ihn benutzt. Halte es kurz.`,
+    result => {
+      el.innerHTML = `
+        <div style="font-size:0.9rem;color:var(--muted);margin-bottom:14px;">Nützliche Sätze für dieses Gespräch:</div>
+        <div style="background:var(--card-bg);border-radius:12px;padding:16px;line-height:1.9;font-size:0.9rem;">${result.replace(/\n/g,'<br>')}</div>
+      `;
+    }
+  );
+}
+
+function lpRenderDialogChat(el) {
+  lpDialogHistory = [];
+  lpDialogDone = false;
+  const u = lpCurrentUnit;
+  el.innerHTML = `
+    <div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.85rem;">
+      <strong>Szenario:</strong> ${u.sceneDE || u.scenario}
+    </div>
+    <div id="lpDialogMessages" style="min-height:200px;margin-bottom:12px;display:flex;flex-direction:column;gap:10px;"></div>
+    <div style="display:flex;gap:8px;" id="lpDialogInputRow">
+      <input type="text" id="lpDialogInput" placeholder="Schreib auf Englisch…" style="flex:1;font-size:0.9rem;" onkeydown="if(event.key==='Enter')lpSendDialogMsg()">
+      <button class="btn btn-primary btn-sm" onclick="lpSendDialogMsg()">Senden</button>
+    </div>
+    <div id="lpDialogDoneBtn" style="display:none;margin-top:12px;">
+      <button class="btn btn-primary" style="width:100%;" onclick="lpFinishDialog()">Gespräch beenden & Feedback →</button>
+    </div>
+  `;
+  // Erste Nachricht von KI
+  lpAppendDialogMsg('emma', '…');
+  const sysPrompt = `Du spielst die Rolle von ${u.role||'Emma'} in diesem Szenario: ${u.scenario}. Antworte IMMER auf Englisch. Bleib in der Rolle. ${getNiveauPrompt()} Halte deine Antworten kurz (1-3 Sätze). Nach 6-8 Nachrichten des Nutzers sage: "That was a great conversation! Type /done to see your feedback."`;
+  lpCallAIChat(sysPrompt, [], `Start the conversation naturally. Set the scene briefly in 1-2 sentences.`, msg => {
+    document.getElementById('lpDialogMessages').lastElementChild.querySelector('.lp-msg-text').textContent = msg;
+    lpDialogHistory.push({ role:'assistant', content: msg });
+  });
+}
+
+function lpAppendDialogMsg(who, text) {
+  const el = document.getElementById('lpDialogMessages');
+  const isUser = who === 'user';
+  const div = document.createElement('div');
+  div.style.cssText = `display:flex;${isUser?'justify-content:flex-end':''}`;
+  div.innerHTML = `<div style="max-width:80%;padding:10px 14px;border-radius:${isUser?'16px 16px 4px 16px':'16px 16px 16px 4px'};background:${isUser?'var(--blue)':'var(--card-bg)'};color:${isUser?'white':'var(--white)'};font-size:0.9rem;line-height:1.5;border:${isUser?'none':'1px solid var(--border)'}"><span class="lp-msg-text">${text}</span></div>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  return div;
+}
+
+function lpSendDialogMsg() {
+  const inp = document.getElementById('lpDialogInput');
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+
+  if (text.toLowerCase() === '/done') { lpFinishDialog(); return; }
+
+  lpAppendDialogMsg('user', text);
+  lpDialogHistory.push({ role:'user', content: text });
+
+  const placeholder = lpAppendDialogMsg('emma', '…');
+  const u = lpCurrentUnit;
+  const sysPrompt = `Du spielst die Rolle von ${u.role||'Emma'} in diesem Szenario: ${u.scenario}. Antworte IMMER auf Englisch. Bleib in der Rolle. ${getNiveauPrompt()} Halte Antworten kurz (1-3 Sätze). Wenn der Lernende mehr als 6 Nachrichten geschrieben hat, schlage freundlich vor, das Gespräch abzuschließen.`;
+  lpCallAIChat(sysPrompt, lpDialogHistory.slice(-10), '', msg => {
+    placeholder.querySelector('.lp-msg-text').textContent = msg;
+    lpDialogHistory.push({ role:'assistant', content: msg });
+    if (lpDialogHistory.filter(m=>m.role==='user').length >= 6) {
+      document.getElementById('lpDialogDoneBtn').style.display = 'block';
+    }
+  });
+}
+
+function lpFinishDialog() {
+  document.getElementById('lpDialogInputRow').style.display = 'none';
+  document.getElementById('lpDialogDoneBtn').style.display = 'none';
+  lpDialogDone = true;
+  lpUserAnswers.dialogHistory = lpDialogHistory;
+  // Alle User-Nachrichten zusammen analysieren
+  const userText = lpDialogHistory.filter(m=>m.role==='user').map(m=>m.content).join(' ');
+  analysiereEingaben(userText, 'lernpfad-dialog', lpCurrentModule?.id, 'dialog');
+  lpNextStep();
+}
+
+function lpRenderDialogFeedback(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI analysiert dein Gespräch…</div>';
+  const userMsgs = (lpUserAnswers.dialogHistory || lpDialogHistory).filter(m=>m.role==='user').map(m=>m.content).join('\n');
+  if (!userMsgs) { el.innerHTML = '<div style="color:var(--muted);">Kein Gespräch aufgezeichnet.</div>'; return; }
+  lpCallAI(
+    `Du bist Englischlehrer. Analysiere diese Nachrichten eines deutschen Lernenden aus einem Rollenspiel-Gespräch. Gib Feedback AUF DEUTSCH. Struktur: 1) Was gut war (max. 2 Punkte), 2) Was verbessert werden kann (max. 3 Fehler mit Erklärung), 3) Ein Alternativvorschlag für einen Satz. Sei freundlich und motivierend. Nachrichten: ${userMsgs}`,
+    result => {
+      el.innerHTML = `<div style="background:var(--card-bg);border-radius:12px;padding:16px;font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderDialogQuestions(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI erstellt Fragen…</div>';
+  const history = lpUserAnswers.dialogHistory || lpDialogHistory;
+  const summary = history.slice(-6).map(m=>`${m.role==='user'?'Lernender':'Emma'}: ${m.content}`).join('\n');
+  lpCallAI(
+    `Du hast gerade ein Gespräch auf Englisch geführt. Stelle 2 kurze Verständnisfragen dazu auf Deutsch, die der Lernende auf Englisch beantworten soll. Das Gespräch: ${summary}`,
+    result => {
+      el.innerHTML = `
+        <div style="font-size:0.9rem;color:var(--muted);margin-bottom:12px;">Beantworte diese Fragen auf Englisch:</div>
+        <div style="background:var(--card-bg);border-radius:12px;padding:16px;margin-bottom:14px;font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>
+        <textarea id="lpDialogQAnswer" placeholder="Deine Antworten auf Englisch…" style="width:100%;min-height:80px;font-size:0.9rem;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;"></textarea>
+        <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="lpSubmitDialogQ()">Abschicken →</button>
+        <div id="lpDialogQResult" style="margin-top:12px;"></div>
+      `;
+    }
+  );
+}
+function lpSubmitDialogQ() {
+  const ans = document.getElementById('lpDialogQAnswer')?.value.trim();
+  if (!ans) return;
+  document.getElementById('lpDialogQResult').innerHTML = '<div style="color:var(--muted);">Feedback…</div>';
+  lpCallAI(
+    `Kurzes Feedback auf Deutsch zu diesen englischen Antworten auf Verständnisfragen: "${ans}". War es verständlich? Gibt es Verbesserungen?`,
+    result => {
+      document.getElementById('lpDialogQResult').innerHTML = `<div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:12px;font-size:0.9rem;line-height:1.7;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+// ── Step-Renderer: Schreiben ───────────────────────────────────────────
+function lpRenderWriteTask(el) {
+  el.innerHTML = `
+    <div style="background:rgba(27,94,166,0.07);border-radius:12px;padding:16px;margin-bottom:16px;">
+      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:6px;">✍️ Deine Aufgabe:</div>
+      <div style="font-size:0.9rem;line-height:1.7;">${lpCurrentUnit.aufgabe || ''}</div>
+    </div>
+    <textarea id="lpWriteInput" placeholder="Schreib hier deinen Text auf Englisch…" style="width:100%;min-height:140px;font-size:0.9rem;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;"></textarea>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="lpSubmitWriteTask()">Korrektur holen →</button>
+  `;
+}
+function lpSubmitWriteTask() {
+  const text = document.getElementById('lpWriteInput')?.value.trim();
+  if (!text || text.split(' ').length < 6) { alert('Bitte schreib mindestens 3 Sätze.'); return; }
+  lpUserAnswers.writeText = text;
+  analysiereEingaben(text, 'lernpfad-schreiben', lpCurrentModule?.id, 'schreiben');
+  lpNextStep();
+}
+
+function lpRenderWriteFeedback(el) {
+  const text = lpUserAnswers.writeText;
+  if (!text) { el.innerHTML = '<div style="color:var(--muted);">Kein Text vorhanden.</div>'; return; }
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI korrigiert deinen Text…</div>';
+  lpCallAI(
+    `Du bist ein Englischlehrer. Korrigiere diesen Text eines deutschsprachigen Lernenden. Aufgabe war: "${lpCurrentUnit.aufgabe}". Gib Feedback AUF DEUTSCH. Zeige: 1) Original-Text, 2) Korrigierte Version, 3) Erklärung der Fehler (max. 5). Sei freundlich. Text: "${text}"`,
+    result => {
+      el.innerHTML = `<div style="font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>`;
+      lpUserAnswers.writeFeedback = result;
+    }
+  );
+}
+
+function lpRenderWriteRevise(el) {
+  el.innerHTML = `
+    <div style="font-size:0.9rem;color:var(--muted);margin-bottom:12px;">Schreib deinen Text nochmal – diesmal mit den Korrekturen im Kopf:</div>
+    <textarea id="lpWriteReviseInput" placeholder="Überarbeiteter Text…" style="width:100%;min-height:140px;font-size:0.9rem;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--white);resize:vertical;">${lpUserAnswers.writeText||''}</textarea>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="lpSubmitWriteRevise()">Vergleichen →</button>
+    <div id="lpReviseResult" style="margin-top:14px;"></div>
+  `;
+}
+function lpSubmitWriteRevise() {
+  const revised = document.getElementById('lpWriteReviseInput')?.value.trim();
+  if (!revised) return;
+  document.getElementById('lpReviseResult').innerHTML = '<div style="color:var(--muted);">KI vergleicht…</div>';
+  lpCallAI(
+    `Vergleiche diese zwei Versionen eines englischen Textes eines deutschsprachigen Lernenden. Lobe auf Deutsch den Fortschritt und weise auf verbleibende Verbesserungen hin. Version 1: "${lpUserAnswers.writeText}" Version 2: "${revised}"`,
+    result => {
+      document.getElementById('lpReviseResult').innerHTML = `<div style="background:rgba(46,125,50,0.08);border-radius:10px;padding:14px;font-size:0.9rem;line-height:1.7;">${result.replace(/\n/g,'<br>')}</div>`;
+    }
+  );
+}
+
+function lpRenderWriteTip(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI erstellt Profi-Tipp…</div>';
+  lpCallAI(
+    `Du bist Englischlehrer. Gib für diese Schreibaufgabe einen "Profi-Tipp" auf Deutsch: eine idiomatische Wendung oder einen natürlichen Ausdruck, der den Text nativer klingen lässt. Aufgabe war: "${lpCurrentUnit.aufgabe}". Text des Lernenden: "${lpUserAnswers.writeText||''}". Halte den Tipp kurz (3-4 Sätze).`,
+    result => {
+      el.innerHTML = `
+        <div style="background:rgba(27,94,166,0.1);border-radius:14px;padding:20px;">
+          <div style="font-size:1.2rem;margin-bottom:10px;text-align:center;">⭐ Profi-Tipp</div>
+          <div style="font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>
+        </div>
+      `;
+    }
+  );
+}
+
+// ── Step-Renderer: Test ────────────────────────────────────────────────
+let lpTestQuestions = [];
+let lpTestCurrentQ = 0;
+let lpTestAnswers = [];
+
+function lpRenderTestRun(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI generiert Testfragen…</div>';
+  const mod = lpCurrentModule;
+  const isAbschluss = lpCurrentUnit.type === 'abschlusstest';
+  const count = isAbschluss ? 20 : (mod.level === 'B1' ? 12 : 10);
+  lpCallAI(
+    `Erstelle ${count} Testfragen für ein Englisch-Lernmodul (${mod.title}, Niveau ${mod.level}) für deutschsprachige Erwachsene. Format als JSON-Array: [{"q":"Frage","type":"mc|luecke|uebersetzung","opts":["A","B","C","D"],"ans":0,"explanation":"kurze Erklärung auf Deutsch"}]. Typen: mc=Multiple Choice (4 Optionen, ans=Index), luecke=Lückentext (opts=null, ans=string), uebersetzung=Übersetzung DE→EN (opts=null, ans=string). ${isAbschluss?'Auch 2 Fragen vom Typ "hoerverstaendnis": KI beschreibt ein Gespräch auf Deutsch, Antwort auf Englisch.':''} Gib NUR das JSON zurück, nichts anderes.`,
+    result => {
+      try {
+        const jsonStr = result.match(/\[[\s\S]*\]/)?.[0] || result;
+        lpTestQuestions = JSON.parse(jsonStr);
+        lpTestCurrentQ = 0;
+        lpTestAnswers = new Array(lpTestQuestions.length).fill('');
+        lpRenderTestQuestion(el);
+      } catch(e) {
+        el.innerHTML = `<div style="color:red;">Fehler beim Laden der Fragen. Bitte erneut versuchen.</div><button class="btn btn-primary" onclick="lpRenderTestRun(document.getElementById('lpStepContent'))">Nochmal →</button>`;
+      }
+    }
+  );
+}
+
+function lpRenderTestQuestion(el) {
+  const q = lpTestQuestions[lpTestCurrentQ];
+  if (!q) return;
+  const total = lpTestQuestions.length;
+  el.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">Frage ${lpTestCurrentQ+1} von ${total}</div>
+    <div style="height:4px;background:var(--border);border-radius:2px;margin-bottom:16px;">
+      <div style="height:4px;background:var(--blue);border-radius:2px;width:${((lpTestCurrentQ+1)/total*100)}%"></div>
+    </div>
+    <div style="font-weight:600;margin-bottom:16px;line-height:1.5;font-size:0.95rem;">${q.q}</div>
+    ${q.type === 'mc' ? `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${(q.opts||[]).map((o,i)=>`
+          <button onclick="lpTestSelectOpt(${i},this)" id="lpTO${i}"
+            style="text-align:left;padding:12px 16px;border:2px solid var(--border);border-radius:10px;background:var(--card-bg);cursor:pointer;font-size:0.9rem;transition:all 0.15s;">${o}</button>
+        `).join('')}
+      </div>
+    ` : `
+      <input type="text" id="lpTestOpenInput" placeholder="${q.type==='uebersetzung'?'Englische Übersetzung…':'Englisches Wort/Phrase…'}"
+        style="width:100%;font-size:0.95rem;padding:12px;" onkeydown="if(event.key==='Enter')lpTestSubmitOpen()" />
+    `}
+    <div style="margin-top:16px;">
+      ${q.type === 'mc'
+        ? `<button class="btn btn-primary" style="width:100%;" onclick="lpTestNextQ()" id="lpTestQNext" disabled>Weiter →</button>`
+        : `<button class="btn btn-primary" style="width:100%;" onclick="lpTestSubmitOpen()">Weiter →</button>`}
+    </div>
+  `;
+}
+
+function lpTestSelectOpt(i, btn) {
+  document.querySelectorAll('[id^=lpTO]').forEach(b=>{ b.style.borderColor='var(--border)'; b.style.background='var(--card-bg)'; });
+  btn.style.borderColor='var(--blue)'; btn.style.background='rgba(27,94,166,0.08)';
+  lpTestAnswers[lpTestCurrentQ] = i;
+  document.getElementById('lpTestQNext').disabled = false;
+}
+function lpTestSubmitOpen() {
+  const val = document.getElementById('lpTestOpenInput')?.value.trim();
+  if (!val) return;
+  lpTestAnswers[lpTestCurrentQ] = val;
+  lpTestNextQ();
+}
+function lpTestNextQ() {
+  if (lpTestCurrentQ < lpTestQuestions.length - 1) {
+    lpTestCurrentQ++;
+    lpRenderTestQuestion(document.getElementById('lpStepContent'));
+  } else {
+    lpUserAnswers.testQuestions = lpTestQuestions;
+    lpUserAnswers.testAnswers = lpTestAnswers;
+    lpNextStep();
+  }
+}
+
+function lpRenderTestResult(el) {
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI wertet aus…</div>';
+  const qs = lpUserAnswers.testQuestions || [];
+  const as = lpUserAnswers.testAnswers || [];
+  const pairs = qs.map((q,i)=>({q:q.q, ans:as[i], correct:q.ans, explanation:q.explanation, type:q.type, opts:q.opts}));
+  lpCallAI(
+    `Werte diesen Englischtest aus. Antworte auf Deutsch. Zeige: 1) Prozentsatz richtig, 2) Liste jeder Frage mit ✅/❌ und kurzer Erklärung bei Fehlern, 3) Empfehlung (weitermachen oder wiederholen). Daten: ${JSON.stringify(pairs).substring(0,2000)}`,
+    result => {
+      let correct = 0;
+      qs.forEach((q,i) => {
+        if (q.type === 'mc' && String(as[i]) === String(q.ans)) correct++;
+        else if (q.type !== 'mc' && typeof as[i] === 'string' && as[i].toLowerCase().includes(String(q.ans).toLowerCase().split(' ')[0])) correct++;
+      });
+      const pct = Math.round(correct/Math.max(qs.length,1)*100);
+      const p = lpGetProgress();
+      if (!p.moduleScores) p.moduleScores = {};
+      p.moduleScores[lpCurrentModule.id] = pct;
+      if (!p.badges) p.badges = {};
+      if (pct >= 80) p.badges[lpCurrentModule.id] = '⭐';
+      lpSaveProgress(p);
+      lpMarkUnitDone(lpCurrentUnit.id);
+
+      el.innerHTML = `
+        <div style="text-align:center;margin-bottom:20px;">
+          <div style="font-size:2.5rem;margin-bottom:8px;">${pct>=80?'🌟':pct>=60?'👍':'💪'}</div>
+          <div style="font-size:1.5rem;font-weight:700;">${pct}%</div>
+          <div style="font-size:0.9rem;color:var(--muted);margin-top:4px;">${correct} von ${qs.length} richtig</div>
+          ${pct>=80?'<div style="margin-top:8px;color:#2e7d32;font-weight:600;">⭐ Superstar-Badge erhalten!</div>':''}
+          ${pct<60?'<div style="margin-top:8px;color:var(--muted);font-size:0.85rem;">Tipp: Wiederhole das Modul für mehr Sicherheit.</div>':''}
+        </div>
+        <div style="font-size:0.9rem;line-height:1.8;">${result.replace(/\n/g,'<br>')}</div>
+      `;
+    }
+  );
+}
+
+// ── Unit abgeschlossen ─────────────────────────────────────────────────
+function lpRenderUnitDone(el) {
+  lpMarkUnitDone(lpCurrentUnit.id);
+  el.innerHTML = `
+    <div style="text-align:center;padding:30px 0;">
+      <div style="font-size:3rem;margin-bottom:12px;">✅</div>
+      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;">Einheit abgeschlossen!</div>
+      <div style="font-size:0.9rem;color:var(--muted);">${lpCurrentUnit.title}</div>
+    </div>
+  `;
+}
+
+// ── KI-Hilfsfunktionen ─────────────────────────────────────────────────
+function lpCallAI(prompt, callback) {
+  const body = {
+    model: MODEL,
+    max_tokens: 600,
+    system: `Du bist ein freundlicher Englischlehrer für deutschsprachige Erwachsene. ${getNiveauPrompt()} ${getProfilePrompt()} Antworte knapp und präzise.`,
+    messages: [{ role:'user', content: prompt }]
+  };
+  apiFetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r => r?.json())
+    .then(d => {
+      const text = d?.content?.[0]?.text || 'Keine Antwort erhalten.';
+      callback(text);
+    })
+    .catch(() => callback('Fehler beim Laden. Bitte prüfe deinen API-Schlüssel.'));
+}
+
+function lpCallAIChat(system, history, userMsg, callback) {
+  const messages = [...history];
+  if (userMsg) messages.push({ role:'user', content: userMsg });
+  const body = {
+    model: MODEL,
+    max_tokens: 200,
+    system,
+    messages
+  };
+  apiFetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r => r?.json())
+    .then(d => {
+      const text = d?.content?.[0]?.text || '…';
+      callback(text);
+    })
+    .catch(() => callback('Sorry, there was an error.'));
+}
