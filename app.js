@@ -137,9 +137,26 @@ function trackActivity(text) {
   window.stats.dailyActivity[today] = (window.stats.dailyActivity[today]||0) + words;
   const cutoff = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
   Object.keys(window.stats.dailyActivity).forEach(k=>{ if(k<cutoff) delete window.stats.dailyActivity[k]; });
-  const goal = (appSettings && appSettings.dailyGoal) || 50;
-  const wordsToday = window.stats.dailyActivity[today]||0;
-  if (wordsToday >= goal) {
+}
+function showStreakCelebration(streak) {
+  const conf = document.createElement('div');
+  conf.className = 'streak-confetti';
+  conf.innerHTML = '<span>⭐</span><span>🎉</span><span>✨</span>';
+  document.body.appendChild(conf);
+  setTimeout(()=>conf.remove(),1400);
+  const toast = document.createElement('div');
+  toast.className = 'streak-toast';
+  toast.textContent = streak === 1 ? 'Super! Tagesziel erreicht – 1 Übung geschafft! 🎉' : `Fantastisch! ${streak} Tage in Folge! ⭐`;
+  document.body.appendChild(toast);
+  setTimeout(()=>toast.remove(),2700);
+}
+function trackDailyUnit() {
+  const today = todayStr();
+  if (!window.stats.dailyUnits) window.stats.dailyUnits = {};
+  window.stats.dailyUnits[today] = (window.stats.dailyUnits[today]||0) + 1;
+  const cutoff = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  Object.keys(window.stats.dailyUnits).forEach(k=>{ if(k<cutoff) delete window.stats.dailyUnits[k]; });
+  if (window.stats.dailyUnits[today] === 1) {
     const last = window.stats.lastActiveDate;
     const yesterday = new Date(Date.now()-86400000).toISOString().slice(0,10);
     if (last === today) {
@@ -153,23 +170,97 @@ function trackActivity(text) {
       window.stats.lastActiveDate = today;
       showStreakCelebration(1);
     }
+    saveData();
   }
-}
-function showStreakCelebration(streak) {
-  const conf = document.createElement('div');
-  conf.className = 'streak-confetti';
-  conf.innerHTML = '<span>⭐</span><span>🎉</span><span>✨</span>';
-  document.body.appendChild(conf);
-  setTimeout(()=>conf.remove(),1400);
-  const toast = document.createElement('div');
-  toast.className = 'streak-toast';
-  toast.textContent = streak === 1 ? 'Super! Du hast heute dein Tagesziel erreicht! 🎉' : `Fantastisch! ${streak} Tage in Folge! ⭐`;
-  document.body.appendChild(toast);
-  setTimeout(()=>toast.remove(),2700);
 }
 
 // ── Storage ──────────────────────────────────────────────────────────
 let appSettings = { theme:'light', lang:'de', dailyGoal:50, fontSize:'normal', apiKey:'', niveau:'A1', motivations:[], interests:[], userName:'' };
+
+// ── Achievements ─────────────────────────────────────────────────────
+const ACHIEVEMENTS = [
+  { id:'first_unit',    icon:'🎯', title:'Erste Einheit!',     desc:'Deine erste Kurs-Einheit abgeschlossen.' },
+  { id:'units_10',      icon:'📘', title:'10 Einheiten',       desc:'10 Kurs-Einheiten erfolgreich abgeschlossen.' },
+  { id:'units_25',      icon:'🏅', title:'Fleißig & treu',     desc:'25 Einheiten abgeschlossen – großartig!' },
+  { id:'streak_3',      icon:'🔥', title:'3 Tage am Stück',    desc:'3 Tage hintereinander gelernt.' },
+  { id:'streak_7',      icon:'⭐', title:'Eine ganze Woche!',  desc:'7 Tage in Folge – du bist dabei!' },
+  { id:'streak_30',     icon:'🏆', title:'30 Tage Streak!',    desc:'30 Tage Lernserie – beeindruckend!' },
+  { id:'first_chat',    icon:'💬', title:'Erstes Gespräch',    desc:'Dein erstes Gespräch auf Englisch geführt.' },
+  { id:'chats_10',      icon:'🗣️', title:'Gesprächsprofi',    desc:'10 Gespräche auf Englisch geführt.' },
+  { id:'words_10',      icon:'📚', title:'10 Vokabeln',        desc:'10 Wörter in deine Liste gespeichert.' },
+  { id:'words_50',      icon:'📖', title:'50 Vokabeln',        desc:'50 Wörter gespeichert – dein Wortschatz wächst!' },
+  { id:'first_writing', icon:'✍️', title:'Erstes Schreiben',   desc:'Deine erste Schreibaufgabe eingereicht.' },
+  { id:'level_a2',      icon:'🆙', title:'Niveau A2!',         desc:'Du hast A2-Niveau erreicht – weiter so!' },
+  { id:'level_b1',      icon:'🌟', title:'Niveau B1!',         desc:'B1 erreicht – schon richtig fortgeschritten!' },
+  { id:'level_b2',      icon:'🎓', title:'Niveau B2!',         desc:'B2 erreicht – du kannst dich fließend verständigen!' },
+];
+function checkAchievements() {
+  const s = window.stats;
+  if (!s.achievements) s.achievements = [];
+  const newly = [];
+  const lpUnits = (typeof lpGetProgress === 'function' ? lpGetProgress().completedUnits : null) || [];
+  const niveau = (appSettings && appSettings.niveau) || 'A1';
+  const condMap = {
+    first_unit:    () => lpUnits.length >= 1,
+    units_10:      () => lpUnits.length >= 10,
+    units_25:      () => lpUnits.length >= 25,
+    streak_3:      () => (s.streak||0) >= 3,
+    streak_7:      () => (s.streak||0) >= 7,
+    streak_30:     () => (s.streak||0) >= 30,
+    first_chat:    () => (s.chats||0) >= 1,
+    chats_10:      () => (s.chats||0) >= 10,
+    words_10:      () => (window.savedWords||[]).length >= 10,
+    words_50:      () => (window.savedWords||[]).length >= 50,
+    first_writing: () => (s.writingCount||0) >= 1,
+    level_a2:      () => niveau === 'A2' || niveau === 'B1' || niveau === 'B2',
+    level_b1:      () => niveau === 'B1' || niveau === 'B2',
+    level_b2:      () => niveau === 'B2',
+  };
+  ACHIEVEMENTS.forEach(ach => {
+    if (!s.achievements.includes(ach.id) && condMap[ach.id] && condMap[ach.id]()) {
+      s.achievements.push(ach.id);
+      newly.push(ach);
+    }
+  });
+  if (newly.length) {
+    saveData();
+    newly.forEach(showAchievementToast);
+    renderAchievements();
+  }
+}
+function showAchievementToast(ach) {
+  const toast = document.createElement('div');
+  toast.className = 'achievement-toast';
+  toast.innerHTML = `<span style="font-size:1.8rem;line-height:1;">${ach.icon}</span><div><div style="font-weight:700;font-size:0.85rem;margin-bottom:2px;">Achievement freigeschaltet!</div><div style="font-size:0.8rem;opacity:0.9;">${ach.title} – ${ach.desc}</div></div>`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+function renderAchievements() {
+  const el = document.getElementById('achievementsSection');
+  if (!el) return;
+  const earned = (window.stats && window.stats.achievements) || [];
+  if (!earned.length) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const earnedAchs = ACHIEVEMENTS.filter(a => earned.includes(a.id));
+  el.innerHTML = `
+    <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Errungenschaften</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      ${earnedAchs.map(a => `<div title="${a.title}: ${a.desc}" onclick="showAchievementDetail('${a.id}')"
+        style="background:rgba(243,156,18,0.12);border:1.5px solid rgba(243,156,18,0.35);border-radius:10px;padding:7px 10px;font-size:1.1rem;cursor:pointer;transition:transform 0.1s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'">${a.icon}</div>`
+      ).join('')}
+    </div>
+    <div style="font-size:0.75rem;color:var(--muted);">${earnedAchs.length} von ${ACHIEVEMENTS.length} freigeschaltet</div>
+  `;
+}
+function showAchievementDetail(id) {
+  const ach = ACHIEVEMENTS.find(a => a.id === id);
+  if (!ach) return;
+  const toast = document.createElement('div');
+  toast.className = 'achievement-toast';
+  toast.innerHTML = `<span style="font-size:1.8rem;line-height:1;">${ach.icon}</span><div><div style="font-weight:700;">${ach.title}</div><div style="font-size:0.8rem;opacity:0.9;">${ach.desc}</div></div>`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2800);
+}
 
 // ── Niveau-Hilfsfunktion ─────────────────────────────────────────────
 // ── Profil-Kontext für KI ────────────────────────────────────────────
@@ -199,6 +290,7 @@ function setNiveau(n) {
   appSettings.niveau = n;
   saveSettings();
   updateUI();
+  checkAchievements();
 }
 
 function loadSettings() {
@@ -293,9 +385,9 @@ function loadData() {
 function switchWriteMode(mode, btn) {
   document.querySelectorAll('.tab-write').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  const ids = ['writeModeSchreiben','writeModeBild','writeModeGrammatik','writeModeLuecke'];
+  const ids = ['writeModeSchreiben','writeModeBild','writeModeGrammatik','writeModeLuecke','writeModeFehler'];
   ids.forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove('active'); });
-  const map = { schreiben:'writeModeSchreiben', bild:'writeModeBild', grammatik:'writeModeGrammatik', luecke:'writeModeLuecke' };
+  const map = { schreiben:'writeModeSchreiben', bild:'writeModeBild', grammatik:'writeModeGrammatik', luecke:'writeModeLuecke', fehler:'writeModeFehler' };
   const target = document.getElementById(map[mode]);
   if(target) target.classList.add('active');
   if(mode==='grammatik') renderGrammar();
@@ -347,10 +439,9 @@ window.updateUI = function() {
   const el_s = document.getElementById('statSentences'); if(el_s) el_s.textContent=window.stats.longestText||0;
   const el_e = document.getElementById('statErrors');    if(el_e) el_e.textContent=n;
   const el_c = document.getElementById('statChats');     if(el_c) el_c.textContent=window.stats.chats||0;
-  const goal = (appSettings&&appSettings.dailyGoal)||50;
-  const wordsToday = (window.stats.dailyActivity&&window.stats.dailyActivity[todayStr()])||0;
-  const el_dw = document.getElementById('statDailyWords'); if(el_dw) el_dw.textContent=wordsToday;
-  const el_dl = document.getElementById('statDailyLabel'); if(el_dl) el_dl.textContent=`Wörter heute / ${goal}`;
+  const unitsToday = (window.stats.dailyUnits&&window.stats.dailyUnits[todayStr()])||0;
+  const el_dw = document.getElementById('statDailyWords'); if(el_dw) el_dw.textContent=unitsToday;
+  const el_dl = document.getElementById('statDailyLabel'); if(el_dl) el_dl.textContent='Übungen heute / Ziel: 1';
   const sh = document.getElementById('statStreakHome'); if(sh) sh.textContent=window.stats.streak||0;
 
   const streak = window.stats.streak||0;
@@ -374,25 +465,52 @@ window.updateUI = function() {
       rlBadge.style.color=remaining<=5?'#F07070':'var(--muted)';
     }
   }
-  // Anfänger-Guide anzeigen/verbergen
+  // Anfänger-Guide vs. Kurs-Weitermachen
   const bg = document.getElementById('beginnerGuide');
-  if (bg) {
-    const n = (appSettings && appSettings.niveau) || 'A1';
-    bg.style.display = (n === 'A1' || n === 'A2') ? 'block' : 'none';
+  const kcc = document.getElementById('kursContinueCard');
+  const userNiveau = (appSettings && appSettings.niveau) || 'A1';
+  const lpProg = lpGetProgress();
+  const lpDoneCount = (lpProg.completedUnits || []).length;
+  if (lpDoneCount > 0) {
+    if (bg) bg.style.display = 'none';
+    if (kcc) {
+      const nextItem = lpFindNextUnit();
+      if (nextItem) {
+        const t = document.getElementById('homeNextUnitTitle');
+        const m = document.getElementById('homeNextUnitModule');
+        if (t) t.textContent = nextItem.unit.title;
+        if (m) m.textContent = nextItem.mod.title;
+        kcc.style.display = 'block';
+      } else {
+        kcc.style.display = 'none';
+      }
+    }
+  } else {
+    if (bg) bg.style.display = (userNiveau === 'A1' || userNiveau === 'A2') ? 'block' : 'none';
+    if (kcc) kcc.style.display = 'none';
   }
+
+  // API-Key Banner
+  const apiBanner = document.getElementById('apiKeyBanner');
+  if (apiBanner) apiBanner.style.display = getUserApiKey() ? 'none' : 'flex';
 
   updateLevelDisplay();
   renderErrors();
   renderActivityChart();
   renderStrengthsWeaknesses();
+  renderAchievements();
+  renderWeeklyRecap();
+  updateSrsBadge();
 };
 
 // ── Level ────────────────────────────────────────────────────────────
 function updateLevelDisplay() {
   const el = document.getElementById('levelDisplay');
+  const wrap = document.getElementById('levelBadgeWrap');
   if (!el) return;
   const totalWords = window.stats.totalWords||0;
-  if (totalWords < 100) { el.textContent='Noch nicht genug Daten'; return; }
+  if (totalWords < 100) { if (wrap) wrap.style.display='none'; return; }
+  if (wrap) wrap.style.display='';
   const n = window.errorLog.length;
   const errorRate = n / Math.max(totalWords/100,1);
   let score = Math.min(100, Math.round((totalWords/20) - (errorRate*5)));
@@ -434,7 +552,9 @@ function renderStrengthsWeaknesses() {
     { label:'🎯 Tests',          sc:score(Math.round(s.testCorrect||0),errBySource.test||0,4), tip:`${errBySource.test||0} Testfehler` },
   ];
   const scored = areas.map(a=>({...a})).filter(a=>a.sc!==null).sort((a,b)=>a.sc-b.sc);
-  if (!scored.length) { el.innerHTML='<div class="sw-empty">Üb regelmäßig, um dein Profil zu sehen!</div>'; return; }
+  const swSection = document.getElementById('swSection');
+  if (!scored.length) { if (swSection) swSection.style.display='none'; return; }
+  if (swSection) swSection.style.display='block';
   function bar(a) {
     const color=a.sc>=60?'#5CC488':a.sc>=40?'var(--accent)':'#F07070';
     return `<div class="sw-row" title="${a.tip}"><span class="sw-label">${a.label}</span><div class="sw-bar-wrap"><div class="sw-bar" style="width:${a.sc}%;background:${color};"></div></div><span class="sw-count" style="color:${color};">${a.sc}%</span></div>`;
@@ -458,13 +578,16 @@ function renderActivityChart() {
     entries.push({d,words});
   }
   const maxW=Math.max(...entries.map(e=>e.words),1);
-  const goal=(appSettings&&appSettings.dailyGoal)||50;
+  const dailyUnits=(window.stats&&window.stats.dailyUnits)||{};
   el.innerHTML=entries.map(e=>{
     const pct=Math.min(100,Math.round((e.words/maxW)*100));
-    const hit=e.words>=goal;
+    const hit=(dailyUnits[e.d]||0)>=1;
     const day=new Date(e.d+'T12:00:00').toLocaleDateString('de-DE',{weekday:'short'});
     return `<div class="chart-col"><div class="chart-bar-wrap"><div class="chart-bar${hit?' hit':''}" style="height:${pct}%;"></div></div><div class="chart-day">${day}</div></div>`;
   }).join('');
+  const totalActivity = entries.reduce((s,e)=>s+e.words,0);
+  const emptyEl = document.getElementById('activityEmptyState');
+  if (emptyEl) emptyEl.style.display = totalActivity === 0 ? 'block' : 'none';
 }
 
 // ── I18N (Deutsch) ───────────────────────────────────────────────────
@@ -593,15 +716,71 @@ const allTips = [
 ];
 
 // ── Personas ─────────────────────────────────────────────────────────
+function getSuggestionsInstruction() {
+  const n = (appSettings && appSettings.niveau) || 'A1';
+  if (n === 'A1') return `\n\nBEGINNER MODE (A1): After your message and the ---KORREKTION--- section, ALWAYS add:\n---SUGGESTIONS---\n[2-3 very short English phrases (max 5 words each) the learner could reply with, one per line. No numbers or bullets.]\nThese should feel natural and continue the conversation.`;
+  if (n === 'A2') return `\n\nAfter your message and ---KORREKTION---, add:\n---SUGGESTIONS---\n[2 short English phrases (max 7 words each) the learner could reply with, one per line. No numbers or bullets.]`;
+  return '';
+}
+
+const CHAT_CHIPS = {
+  emma: [
+    'Good morning, Emma!',
+    'I am fine, thank you.',
+    'Can you speak more slowly?',
+    'What does that mean?',
+    'I don\'t understand.',
+  ],
+  james: [
+    'Hi James! How are you?',
+    'I am from Germany.',
+    'Can you help me?',
+    'That is interesting!',
+    'I don\'t know.',
+  ],
+  _default: [
+    'Hello!',
+    'I am learning English.',
+    'Can you repeat that?',
+    'Thank you!',
+  ]
+};
+
+function renderChatChips() {
+  const container = document.getElementById('chatStarterChips');
+  if (!container) return;
+  const niveau = (appSettings && appSettings.niveau) || 'A1';
+  if (niveau !== 'A1' && niveau !== 'A2') { container.style.display = 'none'; return; }
+  const chips = CHAT_CHIPS[currentPersona] || CHAT_CHIPS._default;
+  container.innerHTML = '<div style="width:100%;font-size:0.7rem;color:var(--muted);margin-bottom:4px;opacity:0.7;">💡 Tap to send:</div>'
+    + chips.map(c =>
+      `<button onclick="sendChatChip(${JSON.stringify(c)})" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:5px 12px;color:var(--white);cursor:pointer;font-size:0.78rem;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">${c}</button>`
+    ).join('');
+  container.style.display = 'flex';
+}
+function sendChatChip(text) {
+  const chips = document.getElementById('chatStarterChips');
+  if (chips) chips.style.display = 'none';
+  const inp = document.getElementById('chatInput');
+  if (inp) { inp.value = text; inp.style.height = 'auto'; }
+  sendChat();
+}
+function sendSuggestion(text, msgEl) {
+  msgEl.querySelectorAll('button[onclick^="sendSuggestion"]').forEach(b => b.style.display='none');
+  const inp = document.getElementById('chatInput');
+  if (inp) { inp.value = text; inp.style.height = 'auto'; }
+  sendChat();
+}
+
 const personas = {
   emma: {
     icon:'👩‍🏫', name:'Emma', role:'Deine Lehrerin · Britisches Englisch',
-    get system() { return `You are Emma, a patient and friendly British English teacher (late 40s). Your student is a German adult who is learning English. ${getNiveauPrompt()} ${getProfilePrompt()} Speak clearly and simply in English. Respond in English only, keep messages to 2–3 sentences. Ask one simple question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]`; },
+    get system() { return `You are Emma, a patient and friendly British English teacher (late 40s). Your student is a German adult who is learning English. ${getNiveauPrompt()} ${getProfilePrompt()} Speak clearly and simply in English. Respond in English only, keep messages to 2–3 sentences. Ask one simple question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]${getSuggestionsInstruction()}`; },
     greeting:'Good morning! How are you today? Are you ready for some English practice? 😊'
   },
   james: {
     icon:'👨‍💼', name:'James', role:'Dein Gesprächspartner · Amerikanisches Englisch',
-    get system() { return `You are James, a friendly American in his 50s. You are having a casual conversation with a German adult who is learning English. ${getNiveauPrompt()} ${getProfilePrompt()} Be warm and encouraging. Speak in natural but simple American English, 2–3 sentences per reply. Ask one question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]`; },
+    get system() { return `You are James, a friendly American in his 50s. You are having a casual conversation with a German adult who is learning English. ${getNiveauPrompt()} ${getProfilePrompt()} Be warm and encouraging. Speak in natural but simple American English, 2–3 sentences per reply. Ask one question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]${getSuggestionsInstruction()}`; },
     greeting:'Hey there! Great to chat with you! So, what\'s on your mind today? 😊'
   }
 };
@@ -624,6 +803,7 @@ function selectPersona(p) {
   document.getElementById('chatRole').textContent=persona.role;
   document.getElementById('chatMessages').innerHTML=
     `<div class="message ai"><div class="avatar">${persona.icon}</div><div><div class="message-bubble">${persona.greeting}</div></div></div>`;
+  renderChatChips();
 }
 function openFreePersona() {
   ['Emma','James','Frei','Doc'].forEach(name=>{
@@ -641,7 +821,7 @@ function startFreePersona() {
   personas['free']={
     icon:'🎭', name:situation.charAt(0).toUpperCase()+situation.slice(1), role:'Freie Situation · Englisch',
     greeting:'Hello! Ready to practice? What would you like to say?',
-    system:`You are playing a character in the following situation: "${situation}". ${getNiveauPrompt()} Speak simple, clear English. 2–3 sentences per reply. Ask one question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]`
+    system:`You are playing a character in the following situation: "${situation}". ${getNiveauPrompt()} Speak simple, clear English. 2–3 sentences per reply. Ask one question at the end.\n\nAfter your message ALWAYS add:\n---KORREKTION---\nFehler: [what was wrong, or "Keine Fehler"]\nKorrektur: [correct version]\nTipp: [short explanation in German]${getSuggestionsInstruction()}`
   };
   document.getElementById('freePersonaBox').style.display='none';
   document.getElementById('freePersonaInput').value='';
@@ -734,6 +914,7 @@ function clearChat() {
   const p=personas[currentPersona]||personas.emma;
   document.getElementById('chatMessages').innerHTML=
     `<div class="message ai"><div class="avatar">${p.icon}</div><div><div class="message-bubble">Hello again! What would you like to talk about? 😊</div></div></div>`;
+  renderChatChips();
 }
 
 // ── Chat Helpers ─────────────────────────────────────────────────────
@@ -742,10 +923,17 @@ function addLoading(cid) {
   d.innerHTML=`<div class="avatar">⏳</div><div><div class="message-bubble"><div class="loading-dots"><span></span><span></span><span></span></div></div></div>`;
   document.getElementById(cid).appendChild(d); document.getElementById(cid).scrollTop=99999;
 }
-function appendMsg(cid, icon, reply, correction) {
+function appendMsg(cid, icon, reply, correction, suggestions) {
   const d=document.createElement('div'); d.className='message ai';
   const ttsBtn=`<button class="tts-btn" onclick="speakEnglish(${JSON.stringify(reply)})" title="Vorlesen">🔊</button>`;
-  d.innerHTML=`<div class="avatar">${icon}</div><div><div class="message-bubble">${reply.replace(/\n/g,'<br>')} ${ttsBtn}</div>${correction?`<div class="correction-bubble"><strong>📝 Sprachliche Rückmeldung</strong><br>${esc(correction)}</div>`:''}</div>`;
+  const suggHtml = (suggestions && suggestions.length)
+    ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;">`
+      + suggestions.map(s =>
+          `<button onclick="sendSuggestion(${JSON.stringify(s)},this.closest('.message'))" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:16px;padding:4px 11px;color:var(--white);cursor:pointer;font-size:0.78rem;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.12)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">${esc(s)}</button>`
+        ).join('')
+      + `</div>`
+    : '';
+  d.innerHTML=`<div class="avatar">${icon}</div><div><div class="message-bubble">${reply.replace(/\n/g,'<br>')} ${ttsBtn}</div>${suggHtml}${correction?`<div class="correction-bubble"><strong>📝 Sprachliche Rückmeldung</strong><br>${esc(correction)}</div>`:''}</div>`;
   document.getElementById(cid).appendChild(d); document.getElementById(cid).scrollTop=99999;
 }
 function appendUserMsg(cid, text) {
@@ -915,32 +1103,114 @@ async function sendChat() {
   chatAttachedFile=null; removeChatFile();
   chatHistory.push({role:'user',content});
   if(chatHistory.length>20) chatHistory=chatHistory.slice(-20);
+  const chips = document.getElementById('chatStarterChips');
+  if (chips) chips.style.display = 'none';
   addLoading('chatMessages');
   try {
     const res=await apiFetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:MODEL,max_tokens:800,system:persona.system,messages:chatHistory})});
     document.getElementById('loadingMsg')?.remove();
-    if(!res){ appendMsg('chatMessages',persona.icon,'Es tut mir leid, der Dienst ist gerade nicht verfügbar.',''); return; }
+    if(!res){ appendMsg('chatMessages',persona.icon,'Es tut mir leid, der Dienst ist gerade nicht verfügbar.','',null); return; }
     const data=await res.json();
-    const full=data.content.map(c=>c.text||'').join('');
+    let full=data.content.map(c=>c.text||'').join('');
+    // Extract suggestions (always at the very end)
+    let suggestions = null;
+    const suggSplit = full.split('---SUGGESTIONS---');
+    if (suggSplit.length > 1) {
+      full = suggSplit[0].trim();
+      suggestions = suggSplit[1].trim().split('\n').map(s=>s.replace(/^[-–•*\d.]\s*/,'')).map(s=>s.trim()).filter(Boolean);
+    }
     const corrIdx=full.indexOf('---KORREKTION---');
     const reply=corrIdx>-1?full.slice(0,corrIdx).trim():full.trim();
     const corrBlock=corrIdx>-1?full.slice(corrIdx+16).trim():'';
     chatHistory.push({role:'assistant',content:full});
     parseErrors(full,'chat');
     const corrFormatted=corrBlock.replace(/\n/g,'<br>');
-    appendMsg('chatMessages',persona.icon,reply,corrBlock?corrFormatted:'');
+    appendMsg('chatMessages',persona.icon,reply,corrBlock?corrFormatted:'',suggestions);
     window.stats.chats=(window.stats.chats||0)+1;
     trackActivity(text); saveData();
+    checkAchievements();
   } catch(e) {
     document.getElementById('loadingMsg')?.remove();
-    appendMsg('chatMessages',persona.icon,'Entschuldigung, etwas ist schiefgelaufen. Bitte versuch es erneut.','');
+    appendMsg('chatMessages',persona.icon,'Entschuldigung, etwas ist schiefgelaufen. Bitte versuch es erneut.','',null);
   }
 }
 
 // ── Writing ──────────────────────────────────────────────────────────
 function getWritingPrompt() {
-  const prompts=[
+  const modulePrompts = {
+    m1: [
+      'Stell dich auf Englisch vor: Wie heißt du? Woher kommst du? Wie alt bist du?',
+      'Beschreib deine Lieblingsfarben und zähl etwas in deinem Zuhause auf Englisch auf.',
+      'Schreib 4–5 Sätze mit "I am", "You are" und "She is/He is".',
+    ],
+    m2: [
+      'Beschreib deinen typischen Tag auf Englisch (Simple Present: I get up, I eat…).',
+      'Schreib 3–5 Sätze über deine Familie auf Englisch.',
+      'Was machst du jeden Morgen? Beschreib deine Routine auf Englisch.',
+    ],
+    m3: [
+      'Schreib eine Wegbeschreibung vom Bahnhof zu einem Café auf Englisch.',
+      'Beschreib, was es in deiner Stadt gibt. Benutze "there is" und "there are".',
+      'Was würdest du im Restaurant bestellen? Schreib deine Bestellung auf Englisch.',
+    ],
+    m4: [
+      'Schreib eine kurze E-Mail an einen Kollegen, dass du morgen krank bist.',
+      'Beschreib deinen früheren Beruf (oder aktuellen Alltag als Rentner) auf Englisch.',
+      'Was kannst du besonders gut? Schreib 3–4 Sätze mit "I can" und "I can\'t".',
+    ],
+    m5: [
+      'Beschreib deine Hobbys auf Englisch. Benutze "I like / love / enjoy + -ing".',
+      'Was hast du letztes Wochenende gemacht? Schreib 4–5 Sätze im Simple Past.',
+      'Empfiehl einen Film oder ein Buch auf Englisch – warum gefällt er/es dir?',
+    ],
+    m6: [
+      'Erzähl von einer Reise, die du gemacht hast. Benutze Simple Past: went, saw, ate…',
+      'Beschreib deinen schönsten Urlaub auf Englisch (mindestens 5 Sätze).',
+      'Was würdest du auf einer Reise nach London als Erstes tun? Schreib einen Plan.',
+    ],
+    m7: [
+      'Beschreib deine gesunde Routine auf Englisch: Was tust du für deine Gesundheit?',
+      'Schreib auf Englisch, was du einem Arzt erklären würdest, wenn du krank bist.',
+      'Erzähl von einem Arztbesuch – was ist passiert? Benutze Past Tense.',
+    ],
+    m8: [
+      'Schreib über ein Thema, das dich gerade beschäftigt – auf Englisch.',
+      'Beschreib einen wichtigen oder unvergesslichen Moment in deinem Leben.',
+      'Was wünschst du dir für die Zukunft? Schreib 4–5 Sätze auf Englisch.',
+    ],
+    m9: [
+      'Schreib eine kurze Argumentation: Warum sollte man Englisch lernen?',
+      'Vergleich das Leben in Deutschland und England – Gemeinsamkeiten und Unterschiede.',
+      'Was würdest du an deiner Stadt ändern, wenn du könntest? Schreib auf Englisch.',
+    ],
+    m10: [
+      'Schreib einen ausführlichen Bericht über ein persönliches Erlebnis (mind. 8 Sätze).',
+      'Diskutiere ein aktuelles Thema, das dir wichtig ist, auf Englisch.',
+      'Erzähl deine Lebensgeschichte kurz auf Englisch – die wichtigsten Stationen.',
+    ],
+    m11: [
+      'Schreib einen Kommentar (~130 Wörter) auf Englisch zu diesem Satz: "You can\'t learn a language after 60." Verwende Idiome und Linking words.',
+      'Erzähl in indirekter Rede (Reported Speech), was dir kürzlich jemand gesagt hat.',
+      'Schreib einen Absatz mit mindestens 3 Phrasal Verbs in natürlichem Kontext.',
+    ],
+    m12: [
+      'Schreib einen formellen Bericht (~130 Wörter) über Freizeitangebote in deiner Stadt. Nutze Passiv, formellen Wortschatz und Linking words.',
+      'Schreib einen argumentativen Essay (~150 Wörter): "Is technology making our lives better or worse?" Beide Seiten, dann Schlussfolgerung.',
+      'Schreib eine formelle E-Mail an ein Hotel mit einer Beschwerde – höflich aber bestimmt.',
+    ],
+    m13: [
+      'Schreib über eine Entscheidung, die du bereust. Benutze Conditional Typ 3: "If I had…, I would have…"',
+      'Schreib einen formellen Brief (~130 Wörter) als Beschwerde an ein Restaurant oder Hotel.',
+      'Schreib 5 Sätze, in denen du nuancierte Formulierungen verwendest (apparently, arguably, it turns out…).',
+    ],
+    m14: [
+      'Schreib eine persönliche Reflexion (~150 Wörter) über deinen Englisch-Lernweg. Nutze komplexe Sätze und Mixed Conditionals.',
+      'Wähl ein Thema, das dir wichtig ist, und schreib einen Kurzessay (~180 Wörter) auf B2-Niveau.',
+      'Schreib einen Meinungsartikel: "What makes a good life?" Zeig deinen gesamten B2-Wortschatz.',
+    ],
+  };
+  const fallbackPrompts = [
     'Erzähl von deinem gestrigen Tag (mindestens 5 Sätze).',
     'Beschreib deinen Lieblingsort in Deutschland auf Englisch.',
     'Was würdest du einem englischsprachigen Touristen in deiner Stadt zeigen?',
@@ -950,8 +1220,15 @@ function getWritingPrompt() {
     'Erzähl von einem unvergesslichen Urlaub – auf Englisch.',
     'Beschreib deine Familie auf Englisch.',
   ];
-  const el=document.getElementById('writingPromptText');
-  if(el) el.textContent=prompts[Math.floor(Math.random()*prompts.length)];
+  const el = document.getElementById('writingPromptText');
+  if (!el) return;
+  const next = lpFindNextUnit ? lpFindNextUnit() : null;
+  if (next && modulePrompts[next.mod.id]) {
+    const arr = modulePrompts[next.mod.id];
+    el.textContent = arr[Math.floor(Math.random() * arr.length)];
+  } else {
+    el.textContent = fallbackPrompts[Math.floor(Math.random() * fallbackPrompts.length)];
+  }
 }
 
 async function submitWriting() {
@@ -982,7 +1259,9 @@ Keep feedback warm, simple, and encouraging.`;
     const mainFeedback=corrIdx>-1?feedback.slice(0,corrIdx).trim():feedback;
     const corrected=corrIdx>-1?feedback.slice(corrIdx+23).trim():'';
     parseWritingErrors(mainFeedback,'schreiben');
+    window.stats.writingCount = (window.stats.writingCount||0) + 1;
     trackActivity(text); saveData();
+    checkAchievements();
     writingAttachedFile=null; removeWritingFile();
     document.getElementById('writingFeedback').innerHTML=
       `<div class="feedback-card"><h4>📝 Rückmeldung</h4><p>${mainFeedback.replace(/\n/g,'<br>')}</p></div>`+
@@ -1386,29 +1665,90 @@ function renderWeeklyRecap() {
   const el = document.getElementById('weeklyRecapWidget');
   if (!el) return;
   const now = new Date();
-  const weekAgo = new Date(now - 7*24*60*60*1000);
-  const thisWeek = (window.errorLog||[]).filter(e => e.isoDate && new Date(e.isoDate) >= weekAgo);
-  const p = lpGetProgress ? lpGetProgress() : {};
-  const doneThisWeek = (p.completedUnits||[]).length; // rough proxy
+  const weekAgoStr = new Date(now - 7*86400000).toISOString().slice(0,10);
 
-  if (!thisWeek.length && !doneThisWeek) { el.style.display = 'none'; return; }
+  // Units this week (dailyUnits keys)
+  const dailyUnits = (window.stats && window.stats.dailyUnits) || {};
+  let unitsThisWeek = 0;
+  let activeDays = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now - i*86400000).toISOString().slice(0,10);
+    const u = dailyUnits[d] || 0;
+    unitsThisWeek += u;
+    if (u >= 1) activeDays++;
+  }
 
-  // Häufigster Fehlertyp
+  // Errors this week
+  const thisWeekErrors = (window.errorLog||[]).filter(e => e.isoDate && e.isoDate.slice(0,10) >= weekAgoStr);
   const typCount = {};
-  thisWeek.forEach(e => { if(e.fehlertyp) typCount[e.fehlertyp] = (typCount[e.fehlertyp]||0)+1; });
+  thisWeekErrors.forEach(e => { if(e.fehlertyp) typCount[e.fehlertyp] = (typCount[e.fehlertyp]||0)+1; });
   const topType = Object.entries(typCount).sort((a,b)=>b[1]-a[1])[0];
+
+  // Words saved this week
+  const wordsThisWeek = (window.savedWords||[]).filter(w => w.date && w.date >= weekAgoStr).length;
+
+  if (!unitsThisWeek && !thisWeekErrors.length && !wordsThisWeek) { el.style.display = 'none'; return; }
 
   el.style.display = 'block';
   el.innerHTML = `
-    <div onclick="showTab('log')" style="background:rgba(27,94,166,0.07);border:1px solid rgba(27,94,166,0.15);border-radius:12px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.15s;" onmouseover="this.style.boxShadow='0 2px 10px rgba(0,0,0,0.07)'" onmouseout="this.style.boxShadow=''">
-      <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">📊 Diese Woche</div>
-      <div style="font-size:0.9rem;color:var(--white);">
-        ${doneThisWeek ? `<span style="margin-right:12px;">✅ ${doneThisWeek} Einheiten</span>` : ''}
-        ${thisWeek.length ? `<span style="margin-right:12px;">⚠️ ${thisWeek.length} Fehler</span>` : ''}
-        ${topType ? `<span>häufigster Typ: <strong>${topType[0]}</strong></span>` : ''}
+    <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">📊 Wochenrückblick</div>
+    <div style="background:var(--card);border-radius:12px;padding:16px;">
+      <div style="display:flex;flex-wrap:wrap;gap:18px;margin-bottom:12px;">
+        ${unitsThisWeek ? `<div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;color:var(--blue);">${unitsThisWeek}</div><div style="font-size:0.72rem;color:var(--muted);">Einheiten</div></div>` : ''}
+        ${activeDays ? `<div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;color:var(--blue);">${activeDays}</div><div style="font-size:0.72rem;color:var(--muted);">aktive Tage</div></div>` : ''}
+        ${wordsThisWeek ? `<div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;color:var(--blue);">${wordsThisWeek}</div><div style="font-size:0.72rem;color:var(--muted);">neue Wörter</div></div>` : ''}
+        ${thisWeekErrors.length ? `<div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;color:#e67e22;">${thisWeekErrors.length}</div><div style="font-size:0.72rem;color:var(--muted);">Fehler geloggt</div></div>` : ''}
       </div>
+      ${topType ? `<div style="font-size:0.82rem;color:var(--muted);margin-bottom:12px;">Häufigster Fehlertyp: <strong style="color:var(--white);">${topType[0]}</strong></div>` : ''}
+      <button id="weeklyTipBtn" class="btn btn-ghost" onclick="loadWeeklyTip()" style="width:100%;font-size:0.85rem;">💡 KI-Tipp für diese Woche</button>
+      <div id="weeklyTipContent" style="display:none;margin-top:12px;font-size:0.85rem;line-height:1.7;color:var(--white);border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;"></div>
     </div>
   `;
+}
+async function loadWeeklyTip() {
+  const btn = document.getElementById('weeklyTipBtn');
+  const content = document.getElementById('weeklyTipContent');
+  if (!btn || !content) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-dots"><span></span><span></span><span></span></span>';
+
+  const now = new Date();
+  const weekAgoStr = new Date(now - 7*86400000).toISOString().slice(0,10);
+  const dailyUnits = (window.stats && window.stats.dailyUnits) || {};
+  let unitsThisWeek = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now - i*86400000).toISOString().slice(0,10);
+    unitsThisWeek += dailyUnits[d] || 0;
+  }
+  const errors = (window.errorLog||[]).filter(e => e.isoDate && e.isoDate.slice(0,10) >= weekAgoStr);
+  const typCount = {};
+  errors.forEach(e => { if(e.fehlertyp) typCount[e.fehlertyp] = (typCount[e.fehlertyp]||0)+1; });
+  const topType = Object.entries(typCount).sort((a,b)=>b[1]-a[1])[0];
+  const ctx = [
+    unitsThisWeek ? `${unitsThisWeek} Lerneinheiten abgeschlossen` : '',
+    (window.stats.streak||0) ? `aktuell ${window.stats.streak} Tage Streak` : '',
+    topType ? `häufigster Fehlertyp diese Woche: ${topType[0]}` : '',
+  ].filter(Boolean).join(', ');
+
+  try {
+    const res = await apiFetch(API_URL, {
+      method:'POST', headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01'},
+      body: JSON.stringify({ model:MODEL_HAIKU, max_tokens:220, messages:[{role:'user', content:
+        `Du bist ein einfühlsamer Englischlehrer für deutsche Senioren. ${getNiveauPrompt()}
+Diese Woche hat der Lernende: ${ctx || 'ein bisschen gelernt'}.
+Gib einen kurzen, persönlichen, ermutigenden Wochentipp (3–4 Sätze auf Deutsch). Beziehe dich auf die Daten. Schließ mit einem konkreten Übungsvorschlag für nächste Woche.`
+      }]})
+    });
+    if (!res) throw new Error();
+    const data = await res.json();
+    const tip = data.content.map(c=>c.text||'').join('').trim();
+    content.style.display = 'block';
+    content.innerHTML = esc(tip).replace(/\n/g,'<br>');
+    btn.style.display = 'none';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💡 KI-Tipp für diese Woche';
+  }
 }
 function setFilter(f,btn) {
   currentFilter=f;
@@ -1794,6 +2134,8 @@ function saveWord() {
   document.getElementById('wordEnInput').value='';
   document.getElementById('wordDeInput').value='';
   saveData(); renderWordsList();
+  updateSrsBadge();
+  checkAchievements();
 }
 async function lookupWord() {
   const en=document.getElementById('wordEnInput').value.trim();
@@ -1812,6 +2154,253 @@ function deleteWord(i) { window.savedWords.splice(i,1); saveData(); renderWordsL
 function exportWordsCSV() {
   const rows=[['Englisch','Deutsch','Beispiel'],...(window.savedWords||[]).map(w=>[w.en||'',w.de||'',w.example||''])];
   downloadFile('headway_woerter.csv','text/csv;charset=utf-8','\uFEFF'+rows.map(r=>r.map(c=>'"'+c.replace(/"/g,'""')+'"').join(',')).join('\n'));
+}
+function exportWordsPDF() {
+  const words = window.savedWords || [];
+  if (!words.length) { alert('Keine Wörter zum Exportieren.'); return; }
+  const rows = words.map((w, i) => `<tr>
+    <td style="color:#888;width:28px;font-size:0.8rem;">${i+1}</td>
+    <td style="font-weight:700;color:#1b5ea6;">${(w.en||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
+    <td>${(w.de||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
+    <td style="color:#666;font-style:italic;font-size:0.85rem;">${(w.example||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>
+  </tr>`).join('');
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Meine Vokabeln – Headway</title>
+<style>body{font-family:Arial,sans-serif;padding:24px;color:#222;}h1{color:#1b5ea6;font-size:1.3rem;margin-bottom:4px;}.meta{color:#888;font-size:0.82rem;margin-bottom:18px;}table{width:100%;border-collapse:collapse;}th{background:#1b5ea6;color:white;padding:8px 10px;text-align:left;font-size:0.82rem;}td{padding:7px 10px;border-bottom:1px solid #eee;vertical-align:top;}tr:nth-child(even) td{background:#f4f8ff;}.print-btn{background:#1b5ea6;color:white;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:0.85rem;margin-bottom:16px;}@media print{.print-btn{display:none;}}</style>
+</head><body>
+<h1>📚 Meine Vokabeln</h1>
+<div class="meta">Exportiert am ${new Date().toLocaleDateString('de-DE')} · ${words.length} Wörter</div>
+<button class="print-btn" onclick="window.print()">🖨️ Als PDF speichern</button>
+<table><thead><tr><th>#</th><th>Englisch</th><th>Deutsch</th><th>Beispielsatz</th></tr></thead><tbody>${rows}</tbody></table>
+</body></html>`;
+  const win = window.open('', '_blank', 'width=820,height=640');
+  if (win) { win.document.write(html); win.document.close(); }
+}
+
+// ── Spaced Repetition (SRS) ───────────────────────────────────────────
+function srsAddDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function srsGetDue() {
+  const today = todayStr();
+  return (window.savedWords || []).filter(w => !w.nextReview || w.nextReview <= today);
+}
+let srsCurrentIndex = 0;
+let srsDueWords = [];
+let srsShowingAnswer = false;
+
+function openSrsMode() {
+  srsDueWords = srsGetDue();
+  if (!srsDueWords.length) {
+    const toast = document.createElement('div');
+    toast.className = 'streak-toast';
+    toast.textContent = 'Alle Karten erledigt – super! 🎉 Morgen gibt es neue.';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2800);
+    return;
+  }
+  srsCurrentIndex = 0;
+  srsShowingAnswer = false;
+  document.getElementById('wordsList').style.display = 'none';
+  document.getElementById('srsStartBtn').style.display = 'none';
+  document.getElementById('srsArea').style.display = 'block';
+  renderSrsCard();
+}
+function closeSrsMode() {
+  document.getElementById('srsArea').style.display = 'none';
+  document.getElementById('srsStartBtn').style.display = 'block';
+  document.getElementById('wordsList').style.display = 'block';
+  updateSrsBadge();
+  renderWordsList();
+}
+function renderSrsCard() {
+  const el = document.getElementById('srsArea');
+  if (!el) return;
+  if (!srsDueWords.length || srsCurrentIndex >= srsDueWords.length) {
+    el.innerHTML = `<div style="text-align:center;padding:30px 10px;">
+      <div style="font-size:3rem;margin-bottom:14px;">🎉</div>
+      <div style="font-size:1.1rem;font-weight:700;margin-bottom:8px;">Alle Karten für heute erledigt!</div>
+      <div style="font-size:0.88rem;color:var(--muted);margin-bottom:20px;">Morgen warten neue Karten auf dich.</div>
+      <button class="btn btn-primary" onclick="closeSrsMode()">← Zurück zur Liste</button>
+    </div>`;
+    checkAchievements();
+    return;
+  }
+  const w = srsDueWords[srsCurrentIndex];
+  const total = srsDueWords.length;
+  const pct = Math.round((srsCurrentIndex / total) * 100);
+  el.innerHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+        <span style="font-size:0.78rem;color:var(--muted);">${srsCurrentIndex + 1} / ${total} fällig</span>
+        <button onclick="closeSrsMode()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.85rem;">✕ Beenden</button>
+      </div>
+      <div style="height:4px;background:rgba(27,94,166,0.15);border-radius:2px;">
+        <div style="height:100%;width:${pct}%;background:var(--blue);border-radius:2px;transition:width 0.3s;"></div>
+      </div>
+    </div>
+    <div style="background:var(--card);border-radius:14px;padding:28px 20px;text-align:center;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,0.08);margin-bottom:14px;">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:10px;">Englisch</div>
+      <div style="font-size:1.7rem;font-weight:700;color:var(--white);">${esc(w.en)}</div>
+      ${srsShowingAnswer ? `
+        <div style="width:40px;height:1px;background:rgba(255,255,255,0.15);margin:16px 0;"></div>
+        <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:6px;">Deutsch</div>
+        <div style="font-size:1.15rem;color:var(--blue);font-weight:600;">${esc(w.de)}</div>
+        ${w.example ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:10px;font-style:italic;">${esc(w.example)}</div>` : ''}
+      ` : `<div style="margin-top:16px;font-size:0.85rem;color:var(--muted);">Weißt du die Bedeutung?</div>`}
+    </div>
+    ${!srsShowingAnswer
+      ? `<button class="btn btn-primary" onclick="srsReveal()" style="width:100%;padding:14px;">Antwort zeigen</button>`
+      : `<div style="display:flex;gap:10px;">
+          <button onclick="srsAnswer(false)" style="flex:1;padding:14px;border-radius:10px;border:2px solid #e74c3c;background:rgba(231,76,60,0.1);color:#e74c3c;font-size:1rem;font-weight:700;cursor:pointer;">✗ Nicht gewusst</button>
+          <button onclick="srsAnswer(true)"  style="flex:1;padding:14px;border-radius:10px;border:2px solid #27ae60;background:rgba(39,174,96,0.1);color:#27ae60;font-size:1rem;font-weight:700;cursor:pointer;">✓ Gewusst</button>
+        </div>`
+    }
+  `;
+}
+function srsReveal() { srsShowingAnswer = true; renderSrsCard(); }
+function srsAnswer(knew) {
+  const w = srsDueWords[srsCurrentIndex];
+  const today = todayStr();
+  const idx = window.savedWords.findIndex(sw => sw.en === w.en && sw.de === w.de);
+  if (idx >= 0) {
+    const sw = window.savedWords[idx];
+    if (!sw.interval) sw.interval = 1;
+    if (!sw.easeFactor) sw.easeFactor = 2.5;
+    if (!sw.repetitions) sw.repetitions = 0;
+    if (knew) {
+      sw.repetitions++;
+      sw.interval = sw.repetitions <= 1 ? 2 : Math.min(Math.round(sw.interval * sw.easeFactor), 60);
+    } else {
+      sw.repetitions = 0;
+      sw.interval = 1;
+    }
+    sw.nextReview = srsAddDays(today, sw.interval);
+    saveData();
+  }
+  srsCurrentIndex++;
+  srsShowingAnswer = false;
+  renderSrsCard();
+}
+function updateSrsBadge() {
+  const btn = document.getElementById('srsStartBtn');
+  if (!btn) return;
+  const due = srsGetDue().length;
+  if (due > 0) {
+    btn.textContent = `🃏 Karteikarten üben (${due} fällig)`;
+    btn.classList.add('srs-btn-due');
+  } else {
+    btn.textContent = '🃏 Karteikarten üben';
+    btn.classList.remove('srs-btn-due');
+  }
+}
+
+// ── Fehler-Drill ──────────────────────────────────────────────────────
+async function loadFehlerDrill() {
+  const el = document.getElementById('fehlerDrillContent');
+  if (!el) return;
+  const errors = window.errorLog || [];
+  if (!errors.length) {
+    el.innerHTML = `<div class="error-log-empty"><div class="big-icon">🎯</div><p>Noch keine Fehler gespeichert.</p><p style="font-size:0.82rem;color:var(--muted);">Übe mit Emma im Gespräch – deine Fehler werden dann hier gespeichert.</p></div>`;
+    return;
+  }
+  const typCount = {};
+  errors.forEach(e => { if(e.fehlertyp) typCount[e.fehlertyp] = (typCount[e.fehlertyp]||0)+1; });
+  const topTypes = Object.entries(typCount).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t]) => t);
+  const sample = errors.slice(0,5).map(e => `"${e.fehl}" → "${e.ret}" (${e.fehlertyp||'Fehler'})`).join('\n');
+
+  el.innerHTML = `<div class="loading-dots" style="padding:20px 0;"><span></span><span></span><span></span></div>`;
+
+  const prompt = `Du bist Englischlehrer für deutsche Senioren. ${getNiveauPrompt()}
+Dein Schüler hat diese typischen Fehler gemacht:
+${sample}
+Häufigste Fehlerarten: ${topTypes.join(', ')}
+
+Erstelle 4 kurze Übungsaufgaben passend zu diesen Fehlern. Nutze zwei Typen:
+- "luecke": Lückentext mit 4 Antwortoptionen
+- "korrektur": Fehlerhaften Satz finden und korrigieren
+
+Antworte NUR mit validem JSON-Array (kein anderer Text):
+[{"typ":"luecke","satz":"I ___ to London last year.","optionen":["go","went","gone","going"],"richtig":1,"erklaerung":"Simple Past von go ist went."},
+{"typ":"korrektur","falsch":"She don't like coffee.","richtig":"She doesn't like coffee.","erklaerung":"Bei he/she/it: doesn't, nicht don't."}]`;
+
+  try {
+    const res = await apiFetch(API_URL, { method:'POST',
+      headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01'},
+      body: JSON.stringify({ model:MODEL_HAIKU, max_tokens:900, messages:[{role:'user',content:prompt}] })
+    });
+    if (!res) throw new Error();
+    const data = await res.json();
+    const raw = data.content.map(c=>c.text||'').join('').trim();
+    const exercises = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    renderFehlerDrillExercises(exercises, topTypes);
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--muted);text-align:center;padding:20px 0;">Übungen konnten nicht geladen werden. Bitte API-Schlüssel prüfen.</div>
+      <button class="btn btn-ghost" onclick="loadFehlerDrill()" style="width:100%;margin-top:8px;">🔄 Nochmal versuchen</button>`;
+  }
+}
+function renderFehlerDrillExercises(exercises, topTypes) {
+  const el = document.getElementById('fehlerDrillContent');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="background:rgba(27,94,166,0.08);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:0.85rem;line-height:1.5;">
+      Gezielte Übungen zu deinen häufigsten Fehlern:<br><strong>${topTypes.join(', ')}</strong>
+    </div>
+    ${exercises.map((ex, i) => renderDrillExercise(ex, i)).join('')}
+    <button class="btn btn-ghost" onclick="loadFehlerDrill()" style="width:100%;margin-top:8px;">🔄 Neue Übungen laden</button>
+  `;
+}
+function renderDrillExercise(ex, idx) {
+  if (ex.typ === 'luecke') {
+    const opts = (ex.optionen||[]).map((o, i) =>
+      `<button onclick="checkDrillLuecke(this,${i},${ex.richtig},${idx},'${(ex.erklaerung||'').replace(/'/g,"\\'")}')"
+        style="padding:8px 14px;border-radius:8px;border:2px solid rgba(27,94,166,0.25);background:var(--card);cursor:pointer;font-size:0.88rem;color:var(--white);">${esc(o)}</button>`
+    ).join('');
+    return `<div class="card" style="margin-bottom:12px;" id="drillEx${idx}">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;">Lückentext</div>
+      <div style="font-size:0.98rem;font-weight:600;margin-bottom:12px;">${esc(ex.satz)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">${opts}</div>
+      <div id="drillFeedback${idx}" style="margin-top:8px;font-size:0.85rem;display:none;"></div>
+    </div>`;
+  }
+  if (ex.typ === 'korrektur') {
+    return `<div class="card" style="margin-bottom:12px;" id="drillEx${idx}">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;">Fehler finden &amp; korrigieren</div>
+      <div style="font-size:0.98rem;font-weight:600;color:#e74c3c;margin-bottom:12px;">${esc(ex.falsch)}</div>
+      <div id="drillFeedback${idx}" style="display:none;margin-bottom:10px;">
+        <div style="color:#27ae60;font-weight:600;margin-bottom:4px;">✓ ${esc(ex.richtig)}</div>
+        <div style="font-size:0.82rem;color:var(--muted);">${esc(ex.erklaerung||'')}</div>
+      </div>
+      <button onclick="revealDrillKorrektur(this,${idx})"
+        style="background:none;border:1px solid rgba(27,94,166,0.3);border-radius:8px;padding:7px 14px;cursor:pointer;font-size:0.85rem;color:var(--blue);">Lösung zeigen</button>
+    </div>`;
+  }
+  return '';
+}
+function checkDrillLuecke(btn, chosen, correct, idx, erklaerung) {
+  const ex = document.getElementById('drillEx' + idx);
+  if (!ex) return;
+  ex.querySelectorAll('button').forEach(b => b.disabled = true);
+  const isRight = chosen === correct;
+  btn.style.borderColor = isRight ? '#27ae60' : '#e74c3c';
+  btn.style.background   = isRight ? 'rgba(39,174,96,0.15)' : 'rgba(231,76,60,0.15)';
+  if (!isRight) {
+    const btns = ex.querySelectorAll('button');
+    if (btns[correct]) { btns[correct].style.borderColor = '#27ae60'; btns[correct].style.background = 'rgba(39,174,96,0.15)'; }
+  }
+  const fb = document.getElementById('drillFeedback' + idx);
+  if (fb) {
+    fb.style.display = 'block';
+    fb.innerHTML = isRight
+      ? `<span style="color:#27ae60;">✓ Richtig!</span>${erklaerung ? ' ' + esc(erklaerung) : ''}`
+      : `<span style="color:#e74c3c;">Noch nicht ganz.</span>${erklaerung ? ' ' + esc(erklaerung) : ''}`;
+  }
+}
+function revealDrillKorrektur(btn, idx) {
+  const fb = document.getElementById('drillFeedback' + idx);
+  if (fb) fb.style.display = 'block';
+  btn.style.display = 'none';
 }
 
 // ── Einstellungen ────────────────────────────────────────────────────
@@ -2394,6 +2983,113 @@ const LP_MODULES = [
     { id:'m10u11', type:'kurztest', title:'Modul-Test: Aktuelle Themen', questions: lpBuildTest('m10') },
     { id:'m10u12', type:'abschlusstest', title:'🏆 Abschlusstest B1', questions: lpBuildTest('m10', true) },
   ]},
+
+  // ─── B2 ───────────────────────────────────────────────────────────────
+  { id:'m11', level:'B2', title:'Sprechen & Redewendungen', desc:'Phrasal Verbs, Idiome, Inversion, natürliche Sprache', units:[
+    { id:'m11u1', type:'vokabeln', title:'Wichtige Phrasal Verbs', vocab:[
+      {de:'aufgeben / etw. aufgeben',en:'give up',hint:'"I gave up smoking." – kein Objekt zwischen give/up nötig'},
+      {de:'verschieben / aufschieben',en:'put off',hint:'"Don\'t put off till tomorrow…"'},
+      {de:'sich kümmern um',en:'look after',hint:'"Could you look after my cat?"'},
+      {de:'durchführen / ausführen',en:'carry out',hint:'"We carried out the plan."'},
+      {de:'zufällig entdecken / treffen',en:'come across',hint:'"I came across this book by chance."'},
+      {de:'erwähnen / erziehen',en:'bring up',hint:'"She brought up an interesting point."'},
+      {de:'herausfinden / trainieren',en:'work out',hint:'"I can\'t work out the answer."'},
+      {de:'ablehnen / lauter stellen',en:'turn down / turn up',hint:'"She turned down the offer." vs. "Turn up the music."'},
+    ]},
+    { id:'m11u2', type:'grammatik', title:'Reported Speech', rule:'Reported Speech (indirekte Rede): Das Verb rückt eine Zeitstufe zurück. „I am tired" → She said she was tired. „I will help" → He said he would help. „I have finished" → She said she had finished. Fragen: She asked if I was ready. Zeitausdrücke ändern sich: now→then, today→that day, yesterday→the day before.', examples:['He said he was looking for a new job.','She told me she had already eaten.','They asked whether we wanted to join.'], translations:['Er sagte, er sei müde.','Sie erklärte, sie habe das Buch gelesen.','Er fragte, ob ich Zeit hätte.','Sie sagten, sie würden kommen.'] },
+    { id:'m11u3', type:'dialog', title:'Über Erfahrungen erzählen', scenario:'Du erzählst Emma von einem prägenden Erlebnis in deinem Leben.', role:'Emma', sceneDE:'Emma bittet dich, von einem unvergesslichen Erlebnis in deinem Leben zu erzählen.' },
+    { id:'m11u4', type:'vokabeln', title:'Englische Idiome', vocab:[
+      {de:'Es regnet in Strömen',en:'It\'s raining cats and dogs',hint:'keine wörtliche Übersetzung'},
+      {de:'Viel Glück! (Theater)',en:'Break a leg!',hint:'beim Vorsprechen / Auftreten'},
+      {de:'genau das Richtige treffen',en:'hit the nail on the head',hint:'"You\'ve hit the nail on the head."'},
+      {de:'nicht fit / krank sein',en:'under the weather',hint:'"I\'m feeling a bit under the weather."'},
+      {de:'du bist am Zug / du entscheidest',en:'the ball is in your court',hint:'aus dem Tennis'},
+      {de:'koste es, was es wolle',en:'at any cost / come what may',hint:'formeller Ausdruck'},
+      {de:'jd. auf dem Laufenden halten',en:'keep someone in the loop',hint:'Business-Englisch'},
+      {de:'einen guten Eindruck hinterlassen',en:'make a good impression',hint:''},
+    ]},
+    { id:'m11u5', type:'grammatik', title:'Inversion für Betonung', rule:'Inversion (Umkehrung von Subjekt + Verb) wird nach negativen oder einschränkenden Adverbien verwendet: Never have I seen such beauty. Not only did she arrive late, but she also forgot her bag. Rarely do we see this. Hardly had I arrived when it started raining. Klingt formal und eindrucksvoll – typisch für B2-Schreiben und Präsentationen.', examples:['Never have I experienced anything like it.','Not only was she talented, but she was also kind.','Rarely do we get such an opportunity.'], translations:['Nie hatte ich so etwas erlebt.','Nicht nur kam er zu spät, er hatte auch seine Unterlagen vergessen.','Selten bekommt man so eine Chance.','Kaum hatte ich es gesagt, bereute ich es.'] },
+    { id:'m11u6', type:'dialog', title:'Spontanes B2-Gespräch', scenario:'Du und Emma führt ein natürliches, freies Gespräch über ein interessantes Thema – ohne feste Vorgaben.', role:'Emma', sceneDE:'Ein offenes Gespräch – Emma wählt ein spannendes Thema und ihr diskutiert frei.' },
+    { id:'m11u7', type:'schreiben', title:'Einen Artikel kommentieren', aufgabe:'Stell dir vor, du hast diesen Satz gelesen: "Learning a language after 60 is nearly impossible." Schreib einen kurzen Kommentar (~130 Wörter), in dem du widersprichst. Nutze Idiome und Linking words: However, In addition, Nevertheless, On the contrary…' },
+    { id:'m11u8', type:'kurztest', title:'Modul-Test: Sprechen & Redewendungen', questions: lpBuildTest('m11') },
+  ]},
+  { id:'m12', level:'B2', title:'Schreiben auf B2-Niveau', desc:'Formelle E-Mails, Berichte, argumentative Essays', units:[
+    { id:'m12u1', type:'vokabeln', title:'Akademischer & formeller Wortschatz', vocab:[
+      {de:'analysieren / untersuchen',en:'analyse / examine',hint:'„We will examine the data."'},
+      {de:'bewerten / einschätzen',en:'evaluate / assess',hint:'„Please evaluate the options."'},
+      {de:'vorschlagen / empfehlen',en:'suggest / recommend',hint:'+ -ing: „I suggest meeting earlier."'},
+      {de:'schlussfolgern',en:'conclude',hint:'„We can conclude that…"'},
+      {de:'zeigen / nachweisen',en:'demonstrate / indicate',hint:'formal'},
+      {de:'wesentlich / bedeutend',en:'significant / substantial',hint:'stärker als „big" oder „important"'},
+      {de:'folglich / daher',en:'consequently / therefore',hint:'für Schlussfolgerungen'},
+      {de:'im Gegensatz dazu',en:'in contrast / conversely',hint:''},
+    ]},
+    { id:'m12u2', type:'grammatik', title:'Passiv mit verschiedenen Zeitformen', rule:'Das Passiv kann in allen Zeitformen gebildet werden: Present: is done, is being done. Past: was done, was being done. Perfect: has been done, had been done. Future: will be done. Im Deutschen gibt es ähnliche Formen – im Englischen wird „by" nur verwendet, wenn der Handelnde wichtig ist. Häufig in formellen und wissenschaftlichen Texten!', examples:['The report has been completed.','The meeting is being held tomorrow.','All entries had been submitted before the deadline.'], translations:['Der Brief wurde gestern abgeschickt.','Die Entscheidung wird nächste Woche getroffen.','Das Projekt ist gerade abgeschlossen worden.','Alle Dokumente waren bereits eingereicht worden.'] },
+    { id:'m12u3', type:'grammatik', title:'Gerundium vs. Infinitiv (fortgeschritten)', rule:'Einige Verben ändern ihre Bedeutung je nachdem, ob sie mit Gerundium (-ing) oder Infinitiv (to + Verb) verbunden werden: I stopped smoking (= ich hörte auf zu rauchen) vs. I stopped to smoke (= ich hielt an, um zu rauchen). I remember meeting her (= Erinnerung) vs. I must remember to call her (= Vorsatz). used to doing = gewohnt sein vs. used to do = früher tun.', examples:['I\'m used to working late.','I used to live in Munich.','She tried explaining, but nobody understood.','Please try to arrive on time.'], translations:['Ich bin es gewohnt, früh aufzustehen.','Früher lebte er auf dem Land.','Vergiss nicht, ihr zu schreiben.','Ich erinnere mich, dieses Buch gelesen zu haben.'] },
+    { id:'m12u4', type:'dialog', title:'Eine Präsentation eröffnen', scenario:'Du hältst die Einleitung einer kurzen Präsentation auf Englisch.', role:'Emma', sceneDE:'Du präsentierst vor Emma. Sie spielt das Publikum und stellt am Ende Fragen.' },
+    { id:'m12u5', type:'vokabeln', title:'Linking words (fortgeschritten)', vocab:[
+      {de:'obwohl / trotz',en:'in spite of / despite',hint:'+ Nomen oder -ing: despite feeling tired'},
+      {de:'während / wohingegen',en:'whereas / whilst',hint:'„She is optimistic, whereas he is cautious."'},
+      {de:'dennoch / trotzdem',en:'nevertheless / nonetheless',hint:''},
+      {de:'darüber hinaus / überdies',en:'furthermore / moreover',hint:'stärker als „also"'},
+      {de:'um zu veranschaulichen',en:'to illustrate / to exemplify',hint:''},
+      {de:'mit Bezug auf',en:'with regard to / regarding',hint:'formell'},
+      {de:'sofern nicht / es sei denn',en:'unless / provided that',hint:''},
+      {de:'im Großen und Ganzen',en:'on the whole / by and large',hint:''},
+    ]},
+    { id:'m12u6', type:'schreiben', title:'Formeller Bericht', aufgabe:'Schreib einen formellen Bericht (~130 Wörter) über die Freizeitangebote in deiner Stadt für ältere Einwohner. Nutze: Introduction, Findings, Recommendations. Verwende Passiv, formellen Wortschatz und Linking words.' },
+    { id:'m12u7', type:'schreiben', title:'Argumentativer Essay', aufgabe:'Schreib einen argumentativen Essay (~150 Wörter): "Is technology making our lives better or worse?" Präsentiere beide Seiten und komm zu einer Schlussfolgerung. Verwende: On one hand… On the other hand… In conclusion…' },
+    { id:'m12u8', type:'dialog', title:'Formelles Bewerbungsgespräch (B2)', scenario:'Du bist in einem Vorstellungsgespräch bei einem internationalen Unternehmen.', role:'Emma', sceneDE:'Emma führt ein anspruchsvolles Bewerbungsgespräch auf Englisch. Zeig dein bestes B2-Englisch.' },
+    { id:'m12u9', type:'kurztest', title:'Modul-Test: Schreiben auf B2-Niveau', questions: lpBuildTest('m12') },
+  ]},
+  { id:'m13', level:'B2', title:'Komplexe Grammatik', desc:'Conditional Typ 3, Relativsätze, Mixed Conditionals, False Friends', units:[
+    { id:'m13u1', type:'grammatik', title:'Conditional Typ 3 (Irreales Vergangenes)', rule:'Conditional Typ 3 = Was wäre gewesen wenn? Etwas ist in der Vergangenheit NICHT passiert. Aufbau: If + Past Perfect, would/could/might + have + Past Participle. „If I had known, I would have helped." Im Deutschen: „Wenn ich das gewusst hätte, hätte ich geholfen." – identische Struktur, aber auf Englisch keine Endungen am Verb! Häufiger Fehler: „If I would have…" → FALSCH.', examples:['If she had studied harder, she would have passed.','He wouldn\'t have been late if he had left earlier.','If we had saved more money, we could have travelled.'], translations:['Wenn ich früher gegangen wäre, hätte ich den Zug erwischt.','Wenn du gefragt hättest, hätte ich dir geholfen.','Wenn es nicht geregnet hätte, wären wir spazieren gegangen.','Wenn sie das gewusst hätte, hätte sie anders entschieden.'] },
+    { id:'m13u2', type:'vokabeln', title:'False Friends & Fallen', vocab:[
+      {de:'werden (nicht: become bei Adjektiven)',en:'get tired / get better / grow older',hint:'„become" nur mit Nomen: become a doctor'},
+      {de:'aktuell (≠ actual)',en:'current / up-to-date',hint:'„actual" = tatsächlich, wirklich'},
+      {de:'Gymnasium (≠ gymnasium)',en:'grammar school / secondary school',hint:'gymnasium = Sporthalle!'},
+      {de:'sensibel (≠ sensible)',en:'sensitive',hint:'sensible = vernünftig, besonnen'},
+      {de:'eventuell (≠ eventually)',en:'possibly / perhaps',hint:'eventually = schließlich, am Ende'},
+      {de:'sympathisch (≠ sympathetic)',en:'likeable / pleasant',hint:'sympathetic = mitfühlend'},
+      {de:'genial (≠ genial)',en:'brilliant / great',hint:'genial = freundlich, liebenswürdig'},
+      {de:'Chef (≠ chef)',en:'boss / manager',hint:'chef = Küchenchef'},
+    ]},
+    { id:'m13u3', type:'grammatik', title:'Relativsätze (fortgeschritten)', rule:'Einschränkende Relativsätze (keine Kommas): The man who called is here. Nicht-einschränkende Relativsätze (mit Kommas, fügen Info hinzu): My sister, who lives in London, is a teacher. „Whose" für Besitz: The woman whose bag was stolen is very upset. „Whom" (formal, Objekt): The person whom I met was very kind. In formellen Texten kein Weglassen des Relativpronomens: The book (that) I read – informal; The book which I read – formal.', examples:['The report, which was published yesterday, attracted attention.','The colleague whose opinion I trust most has resigned.','This is the city in which I was born.'], translations:['Das Buch, das ich gelesen habe, war fesselnd.','Das ist der Mann, dessen Auto gestohlen wurde.','Die Abteilung, für die ich arbeite, wächst.','Das ist das Projekt, mit dem ich geholfen habe.'] },
+    { id:'m13u4', type:'dialog', title:'Komplexe Diskussion', scenario:'Du diskutierst mit Emma ein gesellschaftliches Thema auf B2-Niveau.', role:'Emma', sceneDE:'Emma möchte deine tiefgründige Meinung zu einem aktuellen gesellschaftlichen Thema hören.' },
+    { id:'m13u5', type:'grammatik', title:'Mixed Conditionals', rule:'Mixed Conditionals verbinden verschiedene Zeitebenen. Typ: If + Past Perfect (Vergangenheit) + would + Infinitiv (Gegenwart): If I had worked harder at school, I would have a better job now. Oder: If I were more patient (Gegenwart), I would have handled it better then (Vergangenheit). Diese Konstruktion drückt aus, wie vergangene Entscheidungen die Gegenwart beeinflussen – sehr natürliches, fortgeschrittenes Englisch!', examples:['If she had taken that job, she would be living in London now.','If I weren\'t so shy, I would have spoken to her.','He would be a manager by now if he had taken the promotion.'], translations:['Wenn ich das Angebot angenommen hätte, würde ich jetzt in London leben.','Wenn ich nicht so schüchtern wäre, hätte ich sie angesprochen.','Er wäre jetzt Direktor, wenn er die Beförderung angenommen hätte.','Wenn du gesünder essen würdest, würdest du dich jetzt besser fühlen.'] },
+    { id:'m13u6', type:'vokabeln', title:'Nuancierte Formulierungen', vocab:[
+      {de:'anscheinend / offenbar',en:'apparently / seemingly',hint:'zeigt Unsicherheit oder Distanz'},
+      {de:'angeblich / vermeintlich',en:'supposedly / allegedly',hint:'„allegedly" typisch in Nachrichten'},
+      {de:'wahrscheinlich / wohl',en:'presumably / arguably',hint:'„arguably" = man könnte argumentieren'},
+      {de:'tendenziell / neigen zu',en:'tend to / be inclined to',hint:'„I tend to wake up early."'},
+      {de:'sich herausstellen',en:'turn out / it turns out',hint:'„It turned out to be a great idea."'},
+      {de:'einigermaßen / ziemlich',en:'somewhat / fairly / rather',hint:'Abstufungen: fairly < rather < quite'},
+      {de:'bis zu einem gewissen Grad',en:'to some extent / to a degree',hint:''},
+      {de:'es ist bemerkenswert, dass',en:'it is noteworthy that / remarkably',hint:'für Essays'},
+    ]},
+    { id:'m13u7', type:'schreiben', title:'Formeller Brief (Beschwerde)', aufgabe:'Schreib einen formellen Beschwerdebrief (~130 Wörter) an ein Hotel. Das Zimmer war schmutzig, die Klimaanlage defekt und das Personal unhöflich. Nutze: Dear Sir/Madam, I am writing to express my dissatisfaction with…, I would strongly suggest…, I look forward to your prompt response.' },
+    { id:'m13u8', type:'kurztest', title:'Modul-Test: Komplexe Grammatik', questions: lpBuildTest('m13') },
+  ]},
+  { id:'m14', level:'B2', title:'B2-Abschluss', desc:'Freie Kommunikation, authentische Texte, großer Abschlusstest', units:[
+    { id:'m14u1', type:'dialog', title:'Freies Gespräch: Lebenserfahrungen', scenario:'Freies, offenes Gespräch über deine Lebenserfahrungen, Werte und Gedanken.', role:'Emma', sceneDE:'Emma lädt dich ein, frei und auf B2-Niveau über dein Leben, deine Werte und Erfahrungen zu sprechen.' },
+    { id:'m14u2', type:'grammatik', title:'Emphase & Cleft Sentences', rule:'Cleft Sentences (gespalten Sätze) betonen einen bestimmten Teil: „It was John who called me." (nicht jemand anderes). „What I need is more time." „What surprised me was the price." „The reason why I came is to help." Diese Konstruktionen klingen sehr natürlich auf Englisch und werden von Muttersprachlern häufig verwendet, um etwas zu betonen.', examples:['It was the noise that kept me awake.','What I like about England is the humour.','The reason why she left was unclear.'], translations:['Es war der Lärm, der mich wach hielt.','Was mir an England gefällt, ist der Humor.','Der Grund, warum sie gegangen ist, war unklar.','Es ist die Qualität, die zählt.'] },
+    { id:'m14u3', type:'vokabeln', title:'Präziser Ausdruck & Register', vocab:[
+      {de:'ansprechen / behandeln (ein Thema)',en:'address / tackle',hint:'„We need to address this issue."'},
+      {de:'verdeutlichen / unterstreichen',en:'highlight / underscore',hint:'„I\'d like to highlight one point."'},
+      {de:'betrachten als / ansehen als',en:'regard as / consider to be',hint:'„She is regarded as an expert."'},
+      {de:'sich auseinandersetzen mit',en:'deal with / grapple with',hint:'„grapple with" = mühsam kämpfen mit'},
+      {de:'Vorteile / Nachteile abwägen',en:'weigh up the pros and cons',hint:'nützlich in Diskussionen'},
+      {de:'im weiteren Sinne',en:'broadly speaking / in a broad sense',hint:''},
+      {de:'einen Kompromiss finden',en:'reach a compromise / find middle ground',hint:''},
+      {de:'zuverlässig / verlässlich',en:'reliable / dependable',hint:'Nuance: reliable = Dinge, dependable = Personen'},
+    ]},
+    { id:'m14u4', type:'dialog', title:'Kulturelle Unterschiede diskutieren', scenario:'Du und Emma vergleicht englische und deutsche Kultur – Gewohnheiten, Werte, Humor.', role:'Emma', sceneDE:'Emma möchte deine Sicht auf kulturelle Unterschiede zwischen Deutschland und England hören.' },
+    { id:'m14u5', type:'schreiben', title:'Reflexion: Mein Englisch-Lernweg', aufgabe:'Schreib eine persönliche Reflexion (~150 Wörter) über dein Englischlernen. Was hat dir geholfen? Was war schwierig? Wie hat sich dein Englisch verändert? Nutze komplexe Sätze, Mixed Conditionals und nuancierte Formulierungen.' },
+    { id:'m14u6', type:'dialog', title:'Spontane Problemlösung', scenario:'Eine unerwartete Situation auf Englisch lösen – improvisiert und natürlich.', role:'Emma', sceneDE:'Emma stellt dir eine unerwartete Situation vor (z.B. Reiseproblem, Missverständnis), die du auf Englisch lösen musst.' },
+    { id:'m14u7', type:'schreiben', title:'Kurzessay: Ein Thema deiner Wahl', aufgabe:'Wähl ein Thema, das dich wirklich interessiert, und schreib einen Kurzessay (~180 Wörter) auf Englisch. Zeig alles, was du gelernt hast: komplexe Grammatik, Linking words, nuancierter Wortschatz, präziser Ausdruck.' },
+    { id:'m14u8', type:'kurztest', title:'Modul-Test: B2-Abschluss', questions: lpBuildTest('m14') },
+    { id:'m14u9', type:'abschlusstest', title:'🏆 Großer Abschlusstest B2', questions: lpBuildTest('m14', true) },
+  ]},
 ];
 
 // Einstufungstest-Fragen (statisch, kein API)
@@ -2408,6 +3104,8 @@ const LP_PLACEMENT_QUESTIONS = [
   { q:'Passiv: „Das Buch wurde geschrieben."', opts:['The book wrote.','The book was written.','The book is wrote.','The book has written.'], ans:1, level:'B1' },
   { q:'Conditional Typ 2: „Wenn ich du wäre, würde ich das machen."', opts:['If I am you, I will do it.','If I was you, I would do it.','If I were you, I would do it.','If I were you, I will do it.'], ans:2, level:'B1' },
   { q:'Welcher Satz klingt am natürlichsten auf Englisch?', opts:['I\'m going to the meeting tomorrow at 3.','I will go to the meeting tomorrow at 3.','I go to the meeting tomorrow at 3.','I gone to the meeting tomorrow at 3.'], ans:0, level:'B1' },
+  { q:'Conditional Typ 3: „Wenn ich das gewusst hätte, hätte ich geholfen."', opts:['If I knew that, I would helped.','If I had known that, I would have helped.','If I have known that, I would help.','If I knew that, I would have helped.'], ans:1, level:'B2' },
+  { q:'Reported Speech: „I am tired." – Indirekte Rede?', opts:['She said she is tired.','She said she was tired.','She said she has been tired.','She told she was tired.'], ans:1, level:'B2' },
 ];
 
 // ── Fortschritt-Speicher ───────────────────────────────────────────────
@@ -2423,8 +3121,14 @@ function lpIsUnitDone(unitId) {
 function lpMarkUnitDone(unitId) {
   const p = lpGetProgress();
   if (!p.completedUnits) p.completedUnits = [];
-  if (!p.completedUnits.includes(unitId)) p.completedUnits.push(unitId);
-  lpSaveProgress(p);
+  if (!p.completedUnits.includes(unitId)) {
+    p.completedUnits.push(unitId);
+    trackDailyUnit();
+    lpSaveProgress(p);
+    checkAchievements();
+  } else {
+    lpSaveProgress(p);
+  }
 }
 function lpGetLastModus() {
   return lpGetProgress().lastModus || 'normal';
@@ -2455,11 +3159,23 @@ let lpPlacementAnswers = [];
 function lpInit() {
   document.getElementById('lpLoading').style.display = 'none';
   const p = lpGetProgress();
-  if (!p.placed && !p.startModule) {
+  if (!p.placed && !p.startModule && !p.introSeen) {
+    // First ever visit — show intro screen
+    document.getElementById('lpIntro').style.display = 'block';
+    document.getElementById('lpPlacementTest').style.display = 'none';
+    document.getElementById('lpMain').style.display = 'none';
+  } else if (!p.placed && !p.startModule) {
     lpShowPlacementTest();
   } else {
     lpShowOverview();
   }
+}
+function lpStartIntro() {
+  const p = lpGetProgress();
+  p.introSeen = true;
+  lpSaveProgress(p);
+  document.getElementById('lpIntro').style.display = 'none';
+  lpShowPlacementTest();
 }
 
 // ── Einstufungstest ────────────────────────────────────────────────────
@@ -2516,24 +3232,30 @@ function lpFinishPlacementTest() {
   let correct = 0;
   lpPlacementAnswers.forEach((ans, i) => { if (ans === LP_PLACEMENT_QUESTIONS[i].ans) correct++; });
   let startMod;
-  if (correct <= 3) startMod = 'm1';
-  else if (correct <= 6) startMod = 'm4';
-  else startMod = 'm8';
+  const total = LP_PLACEMENT_QUESTIONS.length; // 12
+  if (correct <= 3)            startMod = 'm1';
+  else if (correct <= 6)       startMod = 'm4';
+  else if (correct <= 9)       startMod = 'm8';
+  else                         startMod = 'm11';
 
   const p = lpGetProgress();
   p.placed = true;
   p.startModule = startMod;
   p.placementScore = correct;
   lpSaveProgress(p);
+  // Sync Niveau setting from placement result
+  const niveauMap = { m1:'A1', m2:'A1', m3:'A1', m4:'A2', m5:'A2', m6:'A2', m7:'A2', m8:'B1', m9:'B1', m10:'B1', m11:'B2', m12:'B2', m13:'B2', m14:'B2' };
+  setNiveau(niveauMap[startMod] || 'A1');
 
   const modTitle = LP_MODULES.find(m=>m.id===startMod)?.title || '';
+  const levelLabel = { m1:'A1-Grundlagen', m4:'A2-Niveau', m8:'B1-Niveau', m11:'B2-Niveau' };
   const el = document.getElementById('lpTestBody');
   el.innerHTML = `
     <div style="text-align:center;padding:20px 0;">
       <div style="font-size:2.5rem;margin-bottom:12px;">🎯</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;">${correct} von 10 richtig</div>
+      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;">${correct} von ${total} richtig</div>
       <div style="color:var(--muted);margin-bottom:20px;font-size:0.9rem;">
-        ${correct <= 3 ? 'Guter Start! Wir beginnen mit den Grundlagen.' : correct <= 6 ? 'Solide Basis! Du startest auf A2-Niveau.' : 'Sehr gut! Du startest direkt auf B1-Niveau.'}
+        ${correct <= 3 ? 'Guter Start! Wir beginnen mit den Grundlagen.' : correct <= 6 ? 'Solide Basis! Du startest auf A2-Niveau.' : correct <= 9 ? 'Sehr gut! Du startest direkt auf B1-Niveau.' : 'Ausgezeichnet! Du startest auf B2-Niveau.'}
       </div>
       <div style="background:rgba(27,94,166,0.08);border-radius:12px;padding:16px;margin-bottom:20px;">
         <div style="font-size:0.85rem;color:var(--muted);">Dein Startpunkt:</div>
@@ -2547,6 +3269,22 @@ function lpFinishPlacementTest() {
 }
 
 // ── Übersicht ──────────────────────────────────────────────────────────
+function lpFindNextUnit() {
+  for (const mod of LP_MODULES) {
+    for (const unit of mod.units) {
+      if (!lpIsUnitDone(unit.id)) return { unit, mod };
+    }
+  }
+  return null;
+}
+function lpContinueNext() {
+  const next = lpFindNextUnit();
+  if (!next) return;
+  lpShowUnitView(next.mod.id);
+  // small delay so unit view renders, then open lesson
+  setTimeout(() => lpOpenLesson(next.unit.id), 50);
+}
+
 function lpShowOverview() {
   document.getElementById('lpPlacementTest').style.display = 'none';
   document.getElementById('lpMain').style.display = 'block';
@@ -2557,32 +3295,62 @@ function lpShowOverview() {
   const p = lpGetProgress();
   const done = (p.completedUnits || []).length;
   const total = LP_MODULES.reduce((s,m)=>s+m.units.length,0);
-  document.getElementById('lpProgressSummary').textContent = `${done} von ${total} Einheiten abgeschlossen`;
+  const pctTotal = total ? Math.round(done/total*100) : 0;
 
-  const startMod = p.startModule || 'm1';
+  // Overall progress bar
+  document.getElementById('lpProgressSummary').textContent = `${done} von ${total} Einheiten abgeschlossen`;
+  document.getElementById('lpProgressPct').textContent = `${pctTotal}%`;
+  document.getElementById('lpProgressBar').style.width = pctTotal + '%';
+
+  // Continue banner
+  const next = lpFindNextUnit();
+  const banner = document.getElementById('lpContinueBanner');
+  if (next && done > 0) {
+    document.getElementById('lpContinueTitle').textContent = next.unit.title;
+    document.getElementById('lpContinueModule').textContent = next.mod.title;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  // Module list grouped by level
+  const levels = ['A1','A2','B1','B2'];
+  const levelColors = { A1:'#2e7d32', A2:'#1565c0', B1:'#6a1b9a', B2:'#b71c1c' };
+  const levelBg    = { A1:'rgba(46,125,50,0.08)', A2:'rgba(21,101,192,0.08)', B1:'rgba(106,27,154,0.08)', B2:'rgba(183,28,28,0.08)' };
+
   const list = document.getElementById('lpModuleList');
-  list.innerHTML = LP_MODULES.map(mod => {
-    const modDone = mod.units.filter(u=>lpIsUnitDone(u.id)).length;
-    const modTotal = mod.units.length;
-    const pct = Math.round(modDone/modTotal*100);
-    const locked = LP_MODULES.indexOf(mod) > 0 && LP_MODULES.indexOf(mod) < LP_MODULES.findIndex(m=>m.id===startMod);
-    const badge = p.badges && p.badges[mod.id];
-    return `
-      <div onclick="${locked ? '' : `lpShowUnitView('${mod.id}')`}"
-           style="background:var(--card-bg);border-radius:14px;padding:16px;margin-bottom:12px;cursor:${locked?'default':'pointer'};opacity:${locked?0.45:1};border:1px solid var(--border);transition:box-shadow 0.15s;"
-           onmouseover="if(!${locked}) this.style.boxShadow='0 2px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <div>
-            <span style="font-size:0.7rem;font-weight:700;color:${mod.level==='A1'?'#2e7d32':mod.level==='A2'?'#1565c0':'#6a1b9a'};background:${mod.level==='A1'?'rgba(46,125,50,0.1)':mod.level==='A2'?'rgba(21,101,192,0.1)':'rgba(106,27,154,0.1)'};padding:2px 8px;border-radius:8px;margin-right:8px;">${mod.level}</span>
-            <strong style="font-size:0.95rem;">${mod.title}</strong>
-            ${badge ? `<span style="margin-left:6px;font-size:0.8rem;">⭐</span>` : ''}
+  list.innerHTML = levels.map(lvl => {
+    const mods = LP_MODULES.filter(m => m.level === lvl);
+    if (!mods.length) return '';
+    const cards = mods.map(mod => {
+      const modDone = mod.units.filter(u=>lpIsUnitDone(u.id)).length;
+      const modTotal = mod.units.length;
+      const pct = Math.round(modDone/modTotal*100);
+      const allDone = pct === 100;
+      const border = allDone ? '1px solid rgba(46,125,50,0.4)' : '1px solid var(--border)';
+      const bg = allDone ? 'rgba(46,125,50,0.04)' : 'var(--card-bg)';
+      return `
+        <div onclick="lpShowUnitView('${mod.id}')"
+             style="background:${bg};border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;border:${border};transition:box-shadow 0.15s,border-color 0.15s;"
+             onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
+            <strong style="font-size:0.95rem;flex:1;">${mod.title}</strong>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              ${allDone ? '<span style="color:#2e7d32;font-size:1rem;">✓</span>' : ''}
+              <span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">${modDone}/${modTotal}</span>
+            </div>
           </div>
-          <div style="font-size:0.8rem;color:var(--muted);">${modDone}/${modTotal}</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">${mod.desc}</div>
+          <div style="height:5px;background:var(--border);border-radius:3px;">
+            <div style="height:5px;background:${allDone?'#2e7d32':'var(--blue)'};border-radius:3px;width:${pct}%;transition:width 0.5s;"></div>
+          </div>
         </div>
-        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:8px;">${mod.desc}</div>
-        <div style="height:4px;background:var(--border);border-radius:2px;">
-          <div style="height:4px;background:${pct===100?'#2e7d32':'var(--blue)'};border-radius:2px;width:${pct}%;transition:width 0.4s;"></div>
-        </div>
+      `;
+    }).join('');
+    return `
+      <div style="margin-bottom:24px;">
+        <div style="display:inline-block;font-size:0.72rem;font-weight:700;color:${levelColors[lvl]};background:${levelBg[lvl]};padding:3px 10px;border-radius:10px;margin-bottom:10px;letter-spacing:0.04em;">${lvl} – ${lvl==='A1'?'Einsteiger':lvl==='A2'?'Grundkenntnisse':'Mittelstufe'}</div>
+        ${cards}
       </div>
     `;
   }).join('');
@@ -2597,17 +3365,19 @@ function lpShowUnitView(moduleId) {
 
   const typeIcon = { vokabeln:'📖', grammatik:'📐', dialog:'💬', schreiben:'✍️', kurztest:'🎯', abschlusstest:'🏆' };
   const list = document.getElementById('lpUnitList');
+  const typeLabel = {vokabeln:'Vokabeln',grammatik:'Grammatik',dialog:'Dialog',schreiben:'Schreiben',kurztest:'Kurztest',abschlusstest:'Abschlusstest'};
   list.innerHTML = lpCurrentModule.units.map((u,i) => {
     const done = lpIsUnitDone(u.id);
     return `
       <div onclick="lpOpenLesson('${u.id}')"
-           style="display:flex;align-items:center;gap:14px;background:var(--card-bg);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);">
-        <div style="font-size:1.4rem;width:36px;text-align:center;">${done?'✅':typeIcon[u.type]||'📌'}</div>
+           style="display:flex;align-items:center;gap:14px;background:${done?'rgba(46,125,50,0.04)':'var(--card-bg)'};border-radius:12px;padding:14px 16px;margin-bottom:8px;cursor:pointer;border:${done?'1px solid rgba(46,125,50,0.2)':'1px solid var(--border)'};opacity:${done?0.75:1};transition:box-shadow 0.15s;"
+           onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.07)'" onmouseout="this.style.boxShadow=''">
+        <div style="width:32px;height:32px;border-radius:50%;background:${done?'rgba(46,125,50,0.12)':'rgba(27,94,166,0.08)'};display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;">${done?'✓':typeIcon[u.type]||'📌'}</div>
         <div style="flex:1;">
-          <div style="font-weight:600;font-size:0.9rem;">${u.title}</div>
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;">${{vokabeln:'Vokabeln',grammatik:'Grammatik',dialog:'Dialog',schreiben:'Schreiben',kurztest:'Kurztest',abschlusstest:'Abschlusstest'}[u.type]}</div>
+          <div style="font-weight:600;font-size:0.9rem;${done?'text-decoration:line-through;color:var(--muted);':''}">${u.title}</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${typeLabel[u.type]||u.type}${done?' · Abgeschlossen':''}</div>
         </div>
-        <div style="font-size:0.8rem;color:var(--muted);">→</div>
+        <div style="font-size:0.8rem;color:${done?'#2e7d32':'var(--muted)'};">${done?'✓':'→'}</div>
       </div>
     `;
   }).join('');
@@ -2625,11 +3395,9 @@ function lpOpenLesson(unitId) {
   document.getElementById('lpUnitView').style.display = 'none';
   document.getElementById('lpLesson').style.display = 'block';
   document.getElementById('lpLessonBreadcrumb').textContent = `${lpCurrentModule.title} › ${lpCurrentUnit.title}`;
-  document.getElementById('lpModeSelect').style.display = 'block';
-  document.getElementById('lpStepProgress').style.display = 'none';
-  document.getElementById('lpStepContent').innerHTML = '';
-  document.getElementById('lpStepNav').style.display = 'none';
-  lpModus = lpGetLastModus();
+  document.getElementById('lpModeSelect').style.display = 'none';
+  lpModus = 'normal';
+  lpStartWithMode('normal');
 }
 
 function lpStartWithMode(modus) {
@@ -3146,7 +3914,7 @@ function lpRenderTestRun(el) {
   el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">KI generiert Testfragen…</div>';
   const mod = lpCurrentModule;
   const isAbschluss = lpCurrentUnit.type === 'abschlusstest';
-  const count = isAbschluss ? 20 : (mod.level === 'B1' ? 12 : 10);
+  const count = isAbschluss ? 20 : (mod.level === 'B2' || mod.level === 'B1' ? 12 : 10);
   lpCallAI(
     `Erstelle ${count} Testfragen für ein Englisch-Lernmodul (${mod.title}, Niveau ${mod.level}) für deutschsprachige Erwachsene. Format als JSON-Array: [{"q":"Frage","type":"mc|luecke|uebersetzung","opts":["A","B","C","D"],"ans":0,"explanation":"kurze Erklärung auf Deutsch"}]. Typen: mc=Multiple Choice (4 Optionen, ans=Index), luecke=Lückentext (opts=null, ans=string), uebersetzung=Übersetzung DE→EN (opts=null, ans=string). ${isAbschluss?'Auch 2 Fragen vom Typ "hoerverstaendnis": KI beschreibt ein Gespräch auf Deutsch, Antwort auf Englisch.':''} Gib NUR das JSON zurück, nichts anderes.`,
     result => {
@@ -3254,11 +4022,30 @@ function lpRenderTestResult(el) {
 // ── Unit abgeschlossen ─────────────────────────────────────────────────
 function lpRenderUnitDone(el) {
   lpMarkUnitDone(lpCurrentUnit.id);
+  // Find next unit across all modules
+  let nextUnit = null, nextMod = null, found = false;
+  for (const mod of LP_MODULES) {
+    for (const unit of mod.units) {
+      if (found) { nextUnit = unit; nextMod = mod; break; }
+      if (unit.id === lpCurrentUnit.id) found = true;
+    }
+    if (nextUnit) break;
+  }
   el.innerHTML = `
-    <div style="text-align:center;padding:30px 0;">
-      <div style="font-size:3rem;margin-bottom:12px;">✅</div>
-      <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;">Einheit abgeschlossen!</div>
-      <div style="font-size:0.9rem;color:var(--muted);">${lpCurrentUnit.title}</div>
+    <div style="text-align:center;padding:24px 0 16px;">
+      <div style="font-size:3rem;margin-bottom:10px;">✅</div>
+      <div style="font-size:1.2rem;font-weight:700;margin-bottom:6px;">Einheit abgeschlossen!</div>
+      <div style="font-size:0.88rem;color:var(--muted);margin-bottom:24px;">${lpCurrentUnit.title}</div>
+      ${nextUnit
+        ? `<button class="btn btn-primary" onclick="lpOpenLesson('${nextUnit.id}')" style="width:100%;margin-bottom:10px;">Weiter → ${nextUnit.title}</button>`
+        : `<button class="btn btn-primary" onclick="lpExitLesson()" style="width:100%;margin-bottom:10px;">🎉 Kurs abgeschlossen!</button>`
+      }
+      <button class="btn btn-ghost" onclick="lpExitLesson()" style="width:100%;margin-bottom:20px;">← Zurück zur Übersicht</button>
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;">Diese Einheit nochmal üben:</div>
+      <div style="display:flex;gap:8px;justify-content:center;">
+        <button class="btn btn-ghost btn-sm" onclick="lpStartWithMode('schnell')">⚡ Schnell (~5 Min.)</button>
+        <button class="btn btn-ghost btn-sm" onclick="lpStartWithMode('ausfuehrlich')">🎓 Ausführlich (~20 Min.)</button>
+      </div>
     </div>
   `;
 }

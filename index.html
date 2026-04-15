@@ -513,6 +513,8 @@ body.theme-dark .onboarding-dot { background:rgba(255,255,255,0.1); }
 .streak-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--blue); color:white; padding:12px 24px; border-radius:25px; font-size:0.95rem; font-weight:600; z-index:1000; animation:toastIn 0.4s ease, toastOut 0.4s ease 2.3s forwards; white-space:nowrap; }
 @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 @keyframes toastOut { from{opacity:1} to{opacity:0} }
+.achievement-toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:linear-gradient(135deg,#f39c12,#e67e22); color:white; padding:12px 20px; border-radius:14px; font-size:0.88rem; font-weight:600; z-index:1001; animation:toastIn 0.4s ease, toastOut 0.5s ease 3.5s forwards; display:flex; align-items:center; gap:12px; max-width:320px; box-shadow:0 4px 20px rgba(0,0,0,0.2); }
+.srs-btn-due { background:var(--blue) !important; color:white !important; }
 
 /* ── LOADING ── */
 .loading-dots { display:flex; gap:4px; align-items:center; padding:4px 0; }
@@ -652,7 +654,25 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
 <!-- ══ START ══════════════════════════════════════════════════════════ -->
 <div class="section active" id="start">
 
-  <!-- Anfänger-Guide (nur A1/A2) -->
+  <!-- API-Key Hinweis -->
+  <div id="apiKeyBanner" style="display:none;background:rgba(200,100,0,0.1);border:1px solid rgba(200,100,0,0.3);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+    <div style="font-size:0.83rem;color:var(--white);">⚠️ Kein API-Schlüssel eingetragen – KI-Funktionen sind deaktiviert.</div>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()" style="flex-shrink:0;white-space:nowrap;">Jetzt eintragen →</button>
+  </div>
+
+  <!-- Kurs: Nächste Einheit (wenn Fortschritt vorhanden) -->
+  <div id="kursContinueCard" style="display:none;margin-bottom:16px;">
+    <div style="background:linear-gradient(135deg,rgba(27,94,166,0.1),rgba(27,94,166,0.05));border:1px solid rgba(27,94,166,0.22);border-radius:10px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="showTab('lernpfad')">
+      <div>
+        <div style="font-size:0.65rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">📘 Kurs – Weiter lernen</div>
+        <div style="font-weight:600;font-size:0.88rem;" id="homeNextUnitTitle">–</div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:1px;" id="homeNextUnitModule">–</div>
+      </div>
+      <div style="color:var(--blue);font-size:1.3rem;flex-shrink:0;margin-left:12px;">→</div>
+    </div>
+  </div>
+
+  <!-- Anfänger-Guide (nur A1/A2, kein Kurs-Fortschritt) -->
   <div id="beginnerGuide" style="display:none;margin-bottom:16px;">
     <div style="background:rgba(27,94,166,0.07);border-radius:10px;padding:12px 16px;display:flex;align-items:flex-start;gap:10px;">
       <span style="font-size:1rem;flex-shrink:0;margin-top:1px;">💡</span>
@@ -697,6 +717,7 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
   <div style="margin-bottom:24px;">
     <div style="font-size:0.72rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Letzte 7 Tage</div>
     <div class="activity-chart" id="activityChart"></div>
+    <div id="activityEmptyState" style="display:none;text-align:center;font-size:0.82rem;color:var(--muted);padding:8px 0 0;">Noch keine Aktivität diese Woche – fang heute an! 🎯</div>
   </div>
 
   <div class="challenge-card">
@@ -714,12 +735,14 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     <div class="tip-text" id="tipText">Lädt…</div>
   </div>
 
-  <div style="margin-bottom:20px;">
+  <div id="swSection" style="display:none;margin-bottom:20px;">
     <div style="font-size:0.78rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Stärken &amp; Schwächen</div>
     <div id="swWidget"></div>
   </div>
 
-  <div class="level-badge">Dein Niveau: <span id="levelDisplay">–</span></div>
+  <div id="levelBadgeWrap" style="display:none;" class="level-badge">Dein Niveau: <span id="levelDisplay">–</span></div>
+
+  <div id="achievementsSection" style="display:none;margin-bottom:20px;"></div>
 
   <div id="weeklyRecapWidget" style="display:none;margin-bottom:20px;"></div>
 </div>
@@ -792,6 +815,8 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
       <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="clearChat()">Neu starten</button>
     </div>
     <div class="chat-messages" id="chatMessages"></div>
+    <!-- CHAT STARTER CHIPS — shown for A1/A2 at conversation start -->
+    <div id="chatStarterChips" style="display:none;padding:8px 12px 4px;flex-wrap:wrap;gap:7px;border-top:1px solid rgba(255,255,255,0.06);"></div>
     <div style="padding:8px 14px 0;display:none;" id="chatFilePreviewWrap">
       <div class="file-preview-wrap" id="chatFilePreview">
         <div id="chatFileThumb"></div>
@@ -816,7 +841,7 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     </div>
   </div>
   <div style="margin-top:12px;font-size:0.8rem;color:var(--muted);text-align:center;">
-    💡 Fehler in Ihrer Nachricht werden automatisch im Fehlerlog gespeichert.
+    💡 Fehler in deiner Nachricht werden automatisch im Fehlerlog gespeichert.
   </div>
 </div>
 
@@ -830,6 +855,7 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     <button class="tab-write" onclick="switchWriteMode('bild',this)">📷 Handschrift</button>
     <button class="tab-write" onclick="switchWriteMode('grammatik',this)">📐 Grammatik</button>
     <button class="tab-write" onclick="switchWriteMode('luecke',this)">📋 Lückenübungen</button>
+    <button class="tab-write" onclick="switchWriteMode('fehler',this)">🎯 Fehler-Drill</button>
   </div>
 
   <!-- Schreiben -->
@@ -900,6 +926,13 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Ein englischer Satz wird angezeigt – mit einer Lücke. Klick auf das richtige Wort. Du siehst sofort, ob es richtig war und warum.</div>
     <div class="filter-btns" id="luckeCatSelect" style="margin-bottom:18px;"></div>
     <div id="luckeExerciseArea"></div>
+  </div>
+
+  <!-- Fehler-Drill -->
+  <div class="write-mode" id="writeModeFehler">
+    <div class="info-box" style="margin-bottom:14px;">💡 <strong>So geht's:</strong> Basierend auf deinen gespeicherten Fehlern erstellt die KI gezielte Übungen – genau für die Punkte, wo du noch Unterstützung brauchst.</div>
+    <button class="btn btn-primary" onclick="loadFehlerDrill()" style="width:100%;margin-bottom:16px;">🎯 Übungen zu meinen Fehlern generieren</button>
+    <div id="fehlerDrillContent"></div>
   </div>
 </div>
 
@@ -1110,19 +1143,47 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-primary" onclick="lookupWord()">🔍 Übersetzen</button>
         <button class="btn btn-ghost" onclick="saveWord()">💾 Speichern</button>
-        <button class="btn-export" onclick="exportWordsCSV()" style="margin-left:auto;">📥 CSV Export</button>
+        <div style="display:flex;gap:6px;margin-left:auto;">
+          <button class="btn-export" onclick="exportWordsCSV()">📥 CSV</button>
+          <button class="btn-export" onclick="exportWordsPDF()">📄 PDF</button>
+        </div>
       </div>
     </div>
   </div>
 
+  <button id="srsStartBtn" class="btn btn-ghost" onclick="openSrsMode()" style="width:100%;margin-bottom:12px;">🃏 Karteikarten üben</button>
+  <div id="srsArea" style="display:none;"></div>
   <div id="wordsList"></div>
 </div>
 
 <!-- ══ LERNPFAD ══════════════════════════════════════════════════════ -->
 <div class="section" id="lernpfad">
+  <!-- Kurs-Intro (nur beim allerersten Besuch) -->
+  <div id="lpIntro" style="display:none;text-align:center;padding:20px 8px;">
+    <div style="font-size:3rem;margin-bottom:16px;">📘</div>
+    <div style="font-family:'Fraunces',serif;font-size:1.4rem;font-weight:700;margin-bottom:10px;">Dein persönlicher Englisch-Kurs</div>
+    <div style="font-size:0.88rem;color:var(--muted);line-height:1.7;margin-bottom:24px;max-width:340px;margin-left:auto;margin-right:auto;">Hier lernst du Schritt für Schritt Englisch – von A1 bis B2. Vokabeln, Grammatik, Gespräche und Schreibübungen, alles in deinem eigenen Tempo.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;margin:0 auto 24px;">
+      <div style="display:flex;align-items:center;gap:12px;text-align:left;">
+        <span style="font-size:1.4rem;">📖</span>
+        <div><strong style="font-size:0.88rem;">Vokabeln & Grammatik</strong><div style="font-size:0.78rem;color:var(--muted);">Schritt für Schritt aufgebaut</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;text-align:left;">
+        <span style="font-size:1.4rem;">💬</span>
+        <div><strong style="font-size:0.88rem;">Dialoge & Gespräche</strong><div style="font-size:0.78rem;color:var(--muted);">Mit KI-Unterstützung üben</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;text-align:left;">
+        <span style="font-size:1.4rem;">✍️</span>
+        <div><strong style="font-size:0.88rem;">Schreibaufgaben</strong><div style="font-size:0.78rem;color:var(--muted);">Mit sofortigem Feedback</div></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="lpStartIntro()" style="width:100%;max-width:300px;padding:14px;">Jetzt starten →</button>
+    <div style="font-size:0.75rem;color:var(--muted);margin-top:12px;">Zuerst 12 kurze Fragen – damit wir deinen Startpunkt finden.</div>
+  </div>
+
   <div id="lpPlacementTest" style="display:none;">
     <div class="section-title">📊 Einstufungstest</div>
-    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:20px;">10 kurze Fragen – wir finden deinen Startpunkt. Kein Stress, kein Wissen nötig!</p>
+    <p style="font-size:0.9rem;color:var(--muted);margin-bottom:20px;">12 kurze Fragen – wir finden deinen Startpunkt (A1 bis B2). Kein Stress, kein Wissen nötig!</p>
     <div id="lpTestBody"></div>
     <div style="display:flex;gap:10px;margin-top:16px;">
       <button class="btn btn-ghost btn-sm" id="lpTestPrevBtn" onclick="lpTestPrev()" style="display:none;">← Zurück</button>
@@ -1133,11 +1194,34 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
   <div id="lpMain" style="display:none;">
     <!-- Übersicht: Module -->
     <div id="lpOverview">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="section-title" style="margin-bottom:0;">📘 Dein Kurs</div>
         <button class="btn btn-ghost btn-sm" onclick="lpShowPlacementTest()" title="Einstufungstest wiederholen">↩ Neu einstufen</button>
       </div>
-      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:20px;" id="lpProgressSummary"></p>
+
+      <!-- Gesamtfortschritt -->
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--muted);margin-bottom:6px;">
+          <span id="lpProgressSummary"></span>
+          <span id="lpProgressPct"></span>
+        </div>
+        <div style="height:6px;background:var(--border);border-radius:3px;">
+          <div id="lpProgressBar" style="height:6px;background:var(--blue);border-radius:3px;width:0%;transition:width 0.5s;"></div>
+        </div>
+      </div>
+
+      <!-- Weiter lernen Banner -->
+      <div id="lpContinueBanner" style="display:none;background:linear-gradient(135deg,rgba(27,94,166,0.12),rgba(27,94,166,0.06));border:1px solid rgba(27,94,166,0.25);border-radius:14px;padding:14px 16px;margin-bottom:20px;cursor:pointer;" onclick="lpContinueNext()">
+        <div style="font-size:0.7rem;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">▶ Weiter lernen</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-weight:600;font-size:0.95rem;" id="lpContinueTitle"></div>
+            <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;" id="lpContinueModule"></div>
+          </div>
+          <div style="font-size:1.3rem;color:var(--blue);">→</div>
+        </div>
+      </div>
+
       <div id="lpModuleList"></div>
     </div>
 
@@ -1344,12 +1428,10 @@ body.theme-dark .read-generated-text { background:rgba(255,255,255,0.05); border
     <div class="settings-section">
       <div class="settings-section-title">Lernziel</div>
       <div class="settings-row">
-        <span class="settings-label">Tagesziel (Wörter)</span>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="number" id="dailyGoalInput" style="width:90px;" min="10" max="500" value="50">
-          <button class="btn btn-primary btn-sm" onclick="saveDailyGoal()">Speichern</button>
-        </div>
+        <span class="settings-label">Tagesziel</span>
+        <span style="font-weight:600;color:var(--blue);">1 Übung pro Tag</span>
       </div>
+      <div style="font-size:0.8rem;color:var(--muted);margin-top:4px;">Schließe täglich mindestens eine Kurs-Einheit ab, um deine Lernserie aufrechtzuerhalten.</div>
     </div>
 
     <div class="settings-section">
