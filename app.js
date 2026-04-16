@@ -320,6 +320,7 @@ function saveApiKey() {
   const val = (document.getElementById('apiKeyInput')?.value || '').trim();
   appSettings.apiKey = val;
   saveSettings();
+  updateUI();
   const fb = document.getElementById('apiKeyFeedback');
   if (fb) {
     fb.textContent = val ? '✅ API-Schlüssel gespeichert!' : '✅ API-Schlüssel entfernt.';
@@ -3319,6 +3320,7 @@ function lpShowOverview() {
   const levelBg    = { A1:'rgba(46,125,50,0.08)', A2:'rgba(21,101,192,0.08)', B1:'rgba(106,27,154,0.08)', B2:'rgba(183,28,28,0.08)' };
 
   const list = document.getElementById('lpModuleList');
+  const startModId = p.placed ? (p.startModule || '') : '';
   list.innerHTML = levels.map(lvl => {
     const mods = LP_MODULES.filter(m => m.level === lvl);
     if (!mods.length) return '';
@@ -3327,12 +3329,18 @@ function lpShowOverview() {
       const modTotal = mod.units.length;
       const pct = Math.round(modDone/modTotal*100);
       const allDone = pct === 100;
-      const border = allDone ? '1px solid rgba(46,125,50,0.4)' : '1px solid var(--border)';
-      const bg = allDone ? 'rgba(46,125,50,0.04)' : 'var(--card-bg)';
+      const isStart = !allDone && mod.id === startModId;
+      const border = allDone ? '2px solid rgba(46,125,50,0.5)'
+                   : isStart ? '2px solid var(--blue)'
+                   : '1px solid var(--border)';
+      const bg = allDone ? 'rgba(46,125,50,0.04)'
+               : isStart ? 'rgba(27,94,166,0.07)'
+               : 'var(--card-bg)';
       return `
-        <div onclick="lpShowUnitView('${mod.id}')"
+        <div onclick="lpShowUnitView('${mod.id}')" data-modid="${mod.id}"
              style="background:${bg};border-radius:14px;padding:16px;margin-bottom:10px;cursor:pointer;border:${border};transition:box-shadow 0.15s,border-color 0.15s;"
-             onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,0.08)'" onmouseout="this.style.boxShadow=''">
+             onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow=''">
+          ${isStart ? `<div style="display:inline-flex;align-items:center;gap:5px;background:var(--blue);color:white;font-size:0.68rem;font-weight:700;padding:3px 9px;border-radius:6px;letter-spacing:0.04em;margin-bottom:10px;">🎯 Dein Startpunkt</div>` : ''}
           <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;">
             <strong style="font-size:0.95rem;flex:1;">${mod.title}</strong>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
@@ -3349,11 +3357,19 @@ function lpShowOverview() {
     }).join('');
     return `
       <div style="margin-bottom:24px;">
-        <div style="display:inline-block;font-size:0.72rem;font-weight:700;color:${levelColors[lvl]};background:${levelBg[lvl]};padding:3px 10px;border-radius:10px;margin-bottom:10px;letter-spacing:0.04em;">${lvl} – ${lvl==='A1'?'Einsteiger':lvl==='A2'?'Grundkenntnisse':'Mittelstufe'}</div>
+        <div style="display:inline-block;font-size:0.72rem;font-weight:700;color:${levelColors[lvl]};background:${levelBg[lvl]};padding:3px 10px;border-radius:10px;margin-bottom:10px;letter-spacing:0.04em;">${lvl} – ${{A1:'Einsteiger',A2:'Grundkenntnisse',B1:'Mittelstufe',B2:'Fortgeschritten'}[lvl]||lvl}</div>
         ${cards}
       </div>
     `;
   }).join('');
+
+  // Nach dem Test: automatisch zum empfohlenen Startmodul scrollen
+  if (startModId) {
+    setTimeout(() => {
+      const el = list.querySelector(`[data-modid="${startModId}"]`);
+      if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+    }, 150);
+  }
 }
 
 // ── Einheiten eines Moduls ─────────────────────────────────────────────

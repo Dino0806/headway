@@ -33,17 +33,22 @@
   const db   = getFirestore(app);
   let syncUnsubscribe = null;
 
-  onAuthStateChanged(auth, async (user) => {
-    window._fbUser = user;
-    if (user) {
-      updateSyncUI(true, user.displayName, user.email);
-      await pullFromFirestore(user.uid);
-      startLiveSync(user.uid);
-    } else {
-      updateSyncUI(false);
-      if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
-    }
-  });
+  if (!isFirebaseConfigured) {
+    // Nicht konfiguriert: sofort die UI in den "unkonfigurierten" Zustand setzen
+    document.addEventListener('DOMContentLoaded', () => updateSyncUI(false));
+  } else {
+    onAuthStateChanged(auth, async (user) => {
+      window._fbUser = user;
+      if (user) {
+        updateSyncUI(true, user.displayName, user.email);
+        await pullFromFirestore(user.uid);
+        startLiveSync(user.uid);
+      } else {
+        updateSyncUI(false);
+        if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
+      }
+    });
+  }
 
   async function pullFromFirestore(uid) {
     try {
@@ -88,9 +93,23 @@
     catch(e) { console.warn('Firestore save fehlgeschlagen:', e); }
   };
 
+  // Prüfen ob Firebase konfiguriert (keine Platzhalter)
+  const isFirebaseConfigured = !firebaseConfig.apiKey.startsWith('DEIN_');
+
   window.firebaseLogin = async function() {
+    if (!isFirebaseConfigured) {
+      alert('Cloud-Synchronisation ist noch nicht eingerichtet.\n\nUm Google-Anmeldung zu aktivieren, muss ein Firebase-Projekt erstellt und die Konfigurationswerte in index.html eingetragen werden.\n\nAnleitung: console.firebase.google.com');
+      return;
+    }
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-    catch(e) { alert('Anmeldung fehlgeschlagen: ' + e.message); }
+    catch(e) {
+      const msg = e.code === 'auth/popup-blocked'
+        ? 'Das Anmeldefenster wurde blockiert. Bitte Popup-Blocker deaktivieren und nochmal versuchen.'
+        : e.code === 'auth/cancelled-popup-request'
+        ? 'Anmeldung abgebrochen.'
+        : 'Anmeldung fehlgeschlagen: ' + e.message;
+      alert(msg);
+    }
   };
   window.firebaseLogout = async function() { await signOut(auth); };
 
@@ -99,6 +118,15 @@
     const loginBtn  = document.getElementById('syncLoginBtn');
     const logoutBtn = document.getElementById('syncLogoutBtn');
     if (!statusEl) return;
+
+    if (!isFirebaseConfigured) {
+      statusEl.innerHTML = 'Cloud-Sync nicht eingerichtet – Daten werden lokal gespeichert.<br><span style="font-size:0.78rem;opacity:0.7;">Firebase-Konfiguration in index.html nötig.</span>';
+      statusEl.style.color = 'var(--muted)';
+      if (loginBtn)  { loginBtn.style.display = 'block'; loginBtn.style.opacity = '0.5'; loginBtn.title = 'Firebase muss erst konfiguriert werden'; }
+      if (logoutBtn) logoutBtn.style.display = 'none';
+      return;
+    }
+
     if (loggedIn) {
       statusEl.innerHTML = `✓ Synchronisiert als <strong>${name}</strong><br><span style="font-size:0.78rem;opacity:0.7;">${email}</span>`;
       statusEl.style.color = '#4caf7d';
