@@ -1811,8 +1811,7 @@ function openInsel(i) {
   document.getElementById('inselPhraseList').innerHTML=(oe.phrases||[]).map((p,j)=>
     `<div class="oe-phrase-row"><span class="oe-en">${esc(p.en||'')} <button class="tts-btn" onclick="speakEnglish('${p.en?.replace(/'/g,"\\'")||''}')" title="Vorlesen">🔊</button></span><span class="oe-de">${esc(p.de||'')}</span><button class="del-btn" onclick="deletePhrase(${i},${j})">✕</button></div>`
   ).join('')||'<p class="empty-hint">Noch keine Phrasen.</p>';
-  document.getElementById('inselDetail').style.display='block';
-  document.getElementById('inselList').closest('.section-inner')?.style && (document.getElementById('inselList').style.display='none');
+  document.getElementById('inselList').style.display='none';
   document.getElementById('inselViewWrap').style.display='block';
 }
 function closeInsel() {
